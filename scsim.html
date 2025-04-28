@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Debug SC Sim</title>
+</head>
+<body>
+  <button id="simBtn">シミュレーション</button>
+
+  <script>
+    // ダミーの simulateTurn
+    function simulateTurn(p) {
+      return { test: 'OK', timestamp: Date.now(), params: p };
+    }
+
+    document.getElementById('simBtn').addEventListener('click', () => {
+      const params = { foo: 123 };
+      const result = simulateTurn(params);
+      console.log('simulateTurn result:', result);
+      alert(JSON.stringify(result));
+    });
+  </script>
+</body>
+</html>
