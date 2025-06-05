@@ -4,6 +4,9 @@
 <meta charset="UTF-8" />
 <title>Simple Supply Chain Simulator</title>
 <style>
+  html, body {
+  height: 100%;
+  }
   body {
     font-family: sans-serif;
     padding: 20px;
@@ -13,6 +16,7 @@
   }
   .tab {
     display: none;
+    min-height: 0;
   }
   .tab.active {
     display: block;
@@ -93,7 +97,7 @@
     }
   }
   .scroll-table-wrap {
-    max-height: 540px;
+    max-height: calc(70vh - 40px);
     overflow-y: auto;
     width: 100%;
   }
