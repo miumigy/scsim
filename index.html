@@ -140,7 +140,7 @@
   <button class="tab-btn" data-tab="dashboard">Dashboard</button>
   <button class="tab-btn" data-tab="psi">PSI Table</button>
   <button class="tab-btn" data-tab="cashflow">CF Log</button>
-  <button class="tab-btn" data-tab="summary">ABC Log(d)</button>
+  <button class="tab-btn" data-tab="summary">ABC Log(d/Prd)</button>
   <button class="tab-btn" data-tab="products">ABC Log(ID)</button>
 </div>
 <div id="animation" class="tab active">
@@ -208,16 +208,16 @@ const config = {
     fillTarget : 0.95       //  βサービス率 (= Fill-rate)
   },
   flow: {
-    RawPrc:   { cap: 200, speed: 5, lot: 100, allowOver: true, orderInterval: 5 },
-    Manuf:    { cap: 180, speed: 3, matPerPrd: 1, prdPerMat: 2, lot: 30, allowOver: true, orderInterval: 3 },
-    F2W:      { cap: 150, speed: 2, allowOver: true, orderInterval: 2 },
-    W2S:      { cap:  90, speed: 1, allowOver: false, orderInterval: 1 }
+    RawPrc:   { cap: 100, speed: 5, lot: 100, allowOver: true, orderInterval: 5 },
+    Manuf:    { cap:  90, speed: 3, matPerPrd: 1, prdPerMat: 2, lot: 30, allowOver: true, orderInterval: 3 },
+    F2W:      { cap:  80, speed: 2, allowOver: true, orderInterval: 2 },
+    W2S:      { cap:  60, speed: 1, allowOver: false, orderInterval: 1 }
   },
   stock: {
-    Raw:       { cap: 200, initial: 100, allowOver: true },
-    Factory:   { cap: 180, initial:  90, allowOver: true },
-    Warehouse: { cap: 240, initial: 120, allowOver: true },
-    Store:     { cap:  80, initial:  80, allowOver: false }
+    Raw:       { cap: 100, initial: 100, allowOver: true },
+    Factory:   { cap:  90, initial:  90, allowOver: true },
+    Warehouse: { cap:  80, initial:  80, allowOver: true },
+    Store:     { cap:  60, initial:  60, allowOver: true }
   },
   push: {
     rawToManuf: false,
@@ -466,7 +466,7 @@ class Stock{
   }
 }
 
-/*──────────────────── 4. FlowBase (tick 共通) ─────────────────*/
+/*──────────────────── 4. FlowBase ───────────────────────*/
 class FlowBase{
   constructor(id,dest){
     this.id=id;
@@ -544,17 +544,17 @@ class Manuf extends FlowBase {
       if (!this.allowOver &&
           this.dest.count() + this.queue.length >= this.cap) break;
 
-      /* 材料取り出し ------------------------------------------------ */
+      /* 材料取り出し ------------------------------- */
       const mats = this.raw.remove(this.matPerPrd);
       consumed  += this.matPerPrd;
 
-      /* 材料コストを製品へ按分 ------------------------------------ */
+      /* 材料コストを製品へ按分 ----------------------- */
       const per = [];
       mats.forEach(m =>
         m.costs.forEach(c =>
           per.push({ amount: c.amount / this.prdPerMat, label: c.label })));
 
-      /* 製品を作る -------------------------------------------------- */
+      /* 製品を作る --------------------------------- */
       for (let j = 0; j < this.prdPerMat && produced < qty; j++) {
         const p = new Product();
         p.materials.push(...mats.map(m => m.id));
@@ -563,7 +563,7 @@ class Manuf extends FlowBase {
         addCost(p, this.v, "Manuf");
         produced++;
 
-        /* speed==0: 直接 Factory 在庫へ -------------------------------- */
+        /* speed==0: 直接 Factory 在庫へ ------------ */
         if (this.speed === 0) {
           this.dest.add(p);
         } else {
@@ -648,9 +648,9 @@ function buildSimulation() {
   };
   flows = {
     RawPrc : new RawPrc (sp.Raw),
-    Manuf   : new Manuf  (sp.Factory,  sp.Raw),
-    F2W  : new Transport("F2W", sp.Factory,   sp.Warehouse),
-    W2S  : new Transport("W2S", sp.Warehouse, sp.Store)
+    Manuf  : new Manuf  (sp.Factory,  sp.Raw),
+    F2W    : new Transport("F2W", sp.Factory,   sp.Warehouse),
+    W2S    : new Transport("W2S", sp.Warehouse, sp.Store)
   };
   initInv();
 
@@ -708,11 +708,11 @@ function resetSimulation() {
 
   // lot, matPerPrd, prdPerMat など欠損にデフォルト値をセット
   Object.keys(config.flow).forEach(k => {
-    config.flow[k].lot       = config.flow[k].lot      ?? 1;
-    config.flow[k].matPerPrd    = config.flow[k].matPerPrd   ?? 1;
-    config.flow[k].prdPerMat    = config.flow[k].prdPerMat   ?? 1;
-    config.flow[k].cap       = config.flow[k].cap      ?? 1;
-    config.flow[k].speed     = config.flow[k].speed    ?? 1;
+    config.flow[k].lot       = config.flow[k].lot       ?? 1;
+    config.flow[k].matPerPrd = config.flow[k].matPerPrd ?? 1;
+    config.flow[k].prdPerMat = config.flow[k].prdPerMat ?? 1;
+    config.flow[k].cap       = config.flow[k].cap       ?? 1;
+    config.flow[k].speed     = config.flow[k].speed     ?? 1;
     config.flow[k].allowOver = config.flow[k].allowOver ?? true;
     config.flow[k].orderInterval = config.flow[k].orderInterval ?? 1;
   });
@@ -741,19 +741,19 @@ function shipItems(from, toFlow, dest, qty) {
 
     /* ===== speed == 0 ⇒ キューに積まず即着 ===== */
     if (toFlow.speed === 0) {
-      // ① 輸送コスト計上（Ex/通常の判定は「発送順」をそのまま使用）
+      // 輸送コスト計上（Ex/通常の判定は「発送順」をそのまま使用）
       const over   = i >= toFlow.cap;
       const label  = over ? `TransEx:${toFlow.id}` : `Trans:${toFlow.id}`;
       const amount = over ? toFlow.vEx            : toFlow.v;
       addCost(it, amount, label);
       if (turnCostAcc) turnCostAcc[label] = (turnCostAcc[label] || 0) + amount;
 
-      // ② 着荷
+      // 着荷
       dest.add(it);
       return;
     }
 
-    /* ===== 従来どおりの搬送（リードタイム > 0） ===== */
+    /* ===== リードタイム > 0 の出荷 ===== */
     const idx    = toFlow.queue.length + i;
     const over   = idx >= toFlow.cap;
     const label  = over ? `TransEx:${toFlow.id}` : `Trans:${toFlow.id}`;
@@ -764,7 +764,7 @@ function shipItems(from, toFlow, dest, qty) {
     toFlow.queue.push({ item: it, rem: toFlow.speed });
   });
 
-  return items.length;     // 発送総数
+  return items.length;
 }
 
 /* =====================================================================================================
@@ -907,14 +907,14 @@ function runTurn() {
 
   turnCostAcc = {};
 
-  /* --- 0) 前在庫 snapshot --------------------------------------- */
+  /* --- 0) 前在庫 snapshot --------------------------- */
   const snap = () => ({
     R: sp.Raw.count(), F: sp.Factory.count(),
     W: sp.Warehouse.count(), S: sp.Store.count()
   });
   const before = snap();
 
-  /* --- 1) 到着処理（tick） -------------------------------------- */
+  /* --- 1) 到着処理（tick） --------------------------- */
   const arrivals = {
     R: flows.RawPrc.tick(),
     F: flows.Manuf.tick(),
@@ -922,7 +922,7 @@ function runTurn() {
     S: flows.W2S.tick()
   };
 
-  /* --- 2) 発注プラン決定 ---------------------------------------- */
+  /* --- 2) 発注プラン決定 ----------------------------- */
   const plan = (flowInputMode === "manual") ? manualPlan() : decide();
 
   /* (Auto モード時は入力欄リセット) */
@@ -932,7 +932,7 @@ function runTurn() {
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = 0; });
   }
 
-  /* --- 3) フローへ投入 ------------------------------------------ */
+  /* --- 3) フローへ投入 ------------------------------- */
   let rawOrdered = 0, makeStarted = 0, rawUsed = 0;
 
   const wsShip = flows.W2S.issue(plan.wsShip,
@@ -951,23 +951,23 @@ function runTurn() {
     return rawOrdered;
   });
 
-  /* --- 3.5) 即納分の補正 --------------------------------------- */
+  /* --- 3.5) 即納分の補正 ----------------------------- */
   const instantRaw = (flows.RawPrc.speed === 0) ? rawOrdered   : 0;
   const instantFac = (flows.Manuf.speed  === 0) ? makeStarted : 0;
   const instantFW  = (flows.F2W.speed    === 0) ? fwShip      : 0;
   const instantWS  = (flows.W2S.speed    === 0) ? wsShip      : 0;
 
-  /* --- 4) 需要生成 & 販売 -------------------------------------- */
+  /* --- 4) 需要生成 & 販売 ---------------------------- */
   const demand   = demandGen.gen();
   const soldList = sp.Store.remove(Math.min(demand, sp.Store.count()));
   const soldQty  = soldList.length;
   const shortage = demand - soldQty;
   soldList.forEach(p => { p.turn = turn; soldProducts.push(p); });
 
-  /* --- 5) 後在庫 snapshot -------------------------------------- */
+  /* --- 5) 後在庫 snapshot --------------------------- */
   const after = snap();
 
-  /* --- 6) PSI ログ -------------------------------------------- */
+  /* --- 6) PSI ログ ---------------------------------- */
   psiLog.push({
     turn,
     rawOrdered, makeStarted,
@@ -1000,10 +1000,10 @@ function runTurn() {
     forecast: config.demand.mean
   });
 
-  /* --- 7) コスト計算 ------------------------------------------- */
+  /* --- 7) コスト計算 -------------------------------- */
   calcTurnCost(soldList, shortage);
 
-  /* --- 8) UI 更新 ---------------------------------------------- */
+  /* --- 8) UI 更新 ---------------------------------- */
   turn++;
   updateTables();
   checkPSIConsistency();
@@ -1044,8 +1044,8 @@ function calcTurnCost(soldList,shortage){
 function checkPSIConsistency() {
 
   if (!psiLog.length) return;
-  const p = psiLog.at(-1);          // 今ターン
-  const e = [];                     // エラー格納
+  const p = psiLog.at(-1);
+  const e = [];
 
   /* ------------------------------------------------------------
      1) 在庫勘定（Raw / Factory / Warehouse / Store）
@@ -1079,7 +1079,7 @@ function checkPSIConsistency() {
       f === "RawPrc" ? pNow.rawOrdered        :
       f === "Manuf"  ? pNow.makeStarted       :
       f === "F2W"    ? pNow.factory.shipped   :
-                       pNow.warehouse.outflow;    // W2S
+                       pNow.warehouse.outflow;         // W2S
 
     const key = (
       f === "RawPrc" ? "rawInTransit" :
@@ -1093,7 +1093,7 @@ function checkPSIConsistency() {
       f === "RawPrc" ? pNow.raw.produced       :
       f === "Manuf"  ? pNow.factory.produced   :
       f === "F2W"    ? pNow.warehouse.inflow   :
-                       pNow.store.inflow;         // W2S
+                       pNow.store.inflow;              // W2S
 
     if (delta + arrived !== issued)
       e.push(`${f}投入${issued} → ΔInTr${delta} + 到着${arrived} が一致しません`);
@@ -1105,9 +1105,9 @@ function checkPSIConsistency() {
   ------------------------------------------------------------ */
 flows.forEach(f => {
   const speed = config.flow[f].speed || 1;
-  if (psiLog.length <= speed) return;          // 記録不足→検証スキップ
+  if (psiLog.length <= speed) return;
 
-  const pPast = psiLog.at(-1 - speed);         // speed ターン前
+  const pPast = psiLog.at(-1 - speed);
   const arrived =
     f === "RawPrc" ? p.raw.produced       :
     f === "Manuf"  ? p.factory.produced   :
@@ -1409,23 +1409,22 @@ function calcTotalStock(p) {
   /* ===== 7) ダッシュボード ================================================================== */
   function renderDashboard(windowSize = 10) {
 
-  // --- タイトル＋累計サマリー1行 ---
-  // --- 累計値計算 ---
-const currDay = turn > 0 ? turn - 1 : 0;
-const ncfSum = doCostsByTurn
-  .filter(d => d.turn > 0)
-  .reduce((a, d) => a + (d.revenue - Object.values(d.actualCost || {}).reduce((x, y) => x + y, 0)), 0);
-const abpSum = soldProducts
-  .reduce((a, p) => a + (config.basePrice - p.total()), 0);
-const currInvPrice = doCostsByTurn.length > 0 ? doCostsByTurn.at(-1).invSell : 0;
-// ★ 累積Shortage Loss
-const shortageSum = doCostsByTurn
-  .filter(d => d.turn > 0)
-  .reduce((a, d) => a + (d.actualCost.Shortage || 0), 0);
+    // --- タイトル＋累計サマリー1行 ---
+    // --- 累計値計算 ---
+    const currDay = turn > 0 ? turn - 1 : 0;
+    const ncfSum = doCostsByTurn
+      .filter(d => d.turn > 0)
+      .reduce((a, d) => a + (d.revenue - Object.values(d.actualCost || {}).reduce((x, y) => x + y, 0)), 0);
+    const abpSum = soldProducts
+      .reduce((a, p) => a + (config.basePrice - p.total()), 0);
+    const currInvPrice = doCostsByTurn.length > 0 ? doCostsByTurn.at(-1).invSell : 0;
+    const shortageSum = doCostsByTurn
+      .filter(d => d.turn > 0)
+      .reduce((a, d) => a + (d.actualCost.Shortage || 0), 0);
 
-// --- サマリー表HTML修正（Shortage Loss列を追加） ---
-const summaryTitle = `<div style="font-weight:bold;font-size:1.15em;margin-bottom:2px;text-align:center;"><h3>Total Profit &amp; Inventory</h3></div>`;
-const summaryTable = `
+    // --- サマリー表HTML ---
+    const summaryTitle = `<div style="font-weight:bold;font-size:1.15em;margin-bottom:2px;text-align:center;"><h3>Total Profit &amp; Inventory</h3></div>`;
+    const summaryTable = `
   <table style="margin:0 auto 18px auto; width:calc(100% - 12px); max-width:900px; font-size:1.15em; text-align:center;">
     <tr>
       <th style="text-align:center;">Day</th>
@@ -1442,7 +1441,7 @@ const summaryTable = `
     <td style="text-align:center;font-weight:bold;">${currInvPrice.toLocaleString()}</td>
     </tr>
   </table>
-`;
+    `;
     /* ---------- 0.  HTML骨格 ---------- */
     document.getElementById("dashboard").innerHTML =
       summaryTitle + summaryTable +  `
