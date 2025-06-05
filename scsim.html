@@ -1,24 +1,2045 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>Debug SC Sim</title>
+<meta charset="UTF-8" />
+<title>Simple Supply Chain Simulator</title>
+<style>
+  body {
+    font-family: sans-serif;
+    padding: 20px;
+  }
+  button {
+    margin: 5px;
+  }
+  .tab {
+    display: none;
+  }
+  .tab.active {
+    display: block;
+  }
+  table, th, td {
+    border: 1px solid #bbb;
+    border-collapse: collapse;
+    padding: 4px;
+  }
+  th {
+    background: #eee;
+  }
+  textarea {
+    width: 100%;
+    max-width: 650px;
+    height: 260px;
+  }
+  .cfg-box {
+    margin: 20px 0;
+    border: 1px solid #ccc;
+    padding: 10px;
+  }
+  #psiCanvas {
+    display: block;
+    margin: 0 auto;
+  }
+  #btn-run {
+    font-size: 1.3em;
+    padding: 6px 12px;
+    border-radius: 4px;
+  }
+  #btn-reset {
+    font-size: 1em;
+    padding: 6px 12px;
+    border-radius: 4px;
+  }
+  .tab-btn {
+    font-size: 1em;
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    border-bottom: none;
+    padding: 8px 16px;
+    cursor: pointer;
+    border-radius: 4px 4px 0 0;
+    margin-right: 4px;
+    transition: background .2s;
+  }
+  .tab-btn.active {
+    background: #fff;
+    font-weight: bold;
+    border-bottom: 1px solid #fff;
+  }
+  #btn-cfg-toggle {
+    font-size: 1em;
+    padding: 6px 12px;
+    border-radius: 4px;
+  }
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 30px 20px;
+    max-width: 900px;
+    margin: 0 auto;
+    justify-items: center;
+  }
+  .dbox {
+    background: none;
+    padding: 18px;
+    box-sizing: border-box;
+  }
+  .dbox h3 {
+    text-align: center;
+  }
+  @media (max-width: 950px) {
+    .dashboard-grid {
+      max-width: 100vw;
+      grid-template-columns: 1fr;
+    }
+  }
+  .scroll-table-wrap {
+    max-height: 540px;
+    overflow-y: auto;
+    width: 100%;
+  }
+  .scroll-table-wrap th {
+    position: sticky;
+    top: 0;
+    background: #eee;
+    z-index: 2;
+  }
+  .psi-decision-col-head {
+    background: #d0eaff !important;
+  }
+  .psi-decision-col-cell {
+    background: #fffad0 !important;
+  }
+  .input-decision-cell {
+    background: #fffad0 !important;
+  }
+</style>
 </head>
 <body>
-  <button id="simBtn">シミュレーション</button>
+<h1 style="text-align: center;">
+  Simple Supply Chain Simulator
+</h1>
+<div class="cfg-box" id="cfg-box">
+  <h3>Configration Editor (JSON)</h3>
+  <textarea id="config-editor"></textarea><br>
+</div>
+<div id="cfg-toggle"
+  style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+  <div>
+    <button id="btn-reset">Update Config & Reset</button>
+  </div>
+  <div style="align-items: center;">
+    <button id="btn-run">1 Day Progress</button>
+  </div>
+  <div>
+    <button id="btn-cfg-toggle">▲ Hide Config</button>
+  </div>
+</div>
+<div id="flow-ctrl-area" style="margin: 10px 0;"></div>
+<div style="flex: 1; text-align: center;">
+  <button class="tab-btn active" data-tab="animation">Animation</button>
+  <button class="tab-btn" data-tab="dashboard">Dashboard</button>
+  <button class="tab-btn" data-tab="psi">PSI Table</button>
+  <button class="tab-btn" data-tab="cashflow">CF Log</button>
+  <button class="tab-btn" data-tab="summary">ABC Log(d)</button>
+  <button class="tab-btn" data-tab="products">ABC Log(ID)</button>
+</div>
+<div id="animation" class="tab active">
+  <canvas id="psiCanvas" style="width:100%;height:400px;"></canvas>
+</div>
+<div id="dashboard" class="tab"></div>
+<div id="psi"       class="tab"></div>
+<div id="cashflow"  class="tab"></div>
+<div id="summary"   class="tab"></div>
+<div id="products"  class="tab"></div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <script>
-    // ダミーの simulateTurn
-    function simulateTurn(p) {
-      return { test: 'OK', timestamp: Date.now(), params: p };
+<script>
+"use strict";
+
+/* =====================================================================================================
+   0. UI 初期化
+===================================================================================================== */
+document.addEventListener("DOMContentLoaded",()=>{
+  document.getElementById("btn-run").onclick=()=>{
+    runTurn();
+    if(document.getElementById("animation").classList.contains("active"))
+      setTimeout(renderPSIAnimation,50);
+  };
+  document.getElementById("btn-reset").onclick=resetSimulation;
+  document.querySelectorAll(".tab-btn").forEach(btn=>{
+    btn.onclick=()=>{
+      document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+      document.getElementById(btn.dataset.tab).classList.add("active");
+document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    if(btn.dataset.tab==="animation") setTimeout(renderPSIAnimation,100);
+    };
+  });
+
+document.getElementById("config-editor").value=JSON.stringify(config,null,2);
+let cfgBoxOpen = true;
+const cfgBox   = document.getElementById('cfg-box');
+const btnCfgToggle = document.getElementById('btn-cfg-toggle');
+btnCfgToggle.onclick = function() {
+  cfgBoxOpen = !cfgBoxOpen;
+  cfgBox.style.display = cfgBoxOpen ? '' : 'none';
+  btnCfgToggle.textContent = cfgBoxOpen ? '▲ Hide Config' : '▼ Display Config';
+};
+
+buildSimulation();updateTables();setTimeout(renderPSIAnimation,100);
+});
+
+/* =====================================================================================================
+   1. 設定
+===================================================================================================== */
+let turn=1;
+const doCostsByTurn=[],soldProducts=[],psiLog=[];
+const config = {
+  demand: {
+    random: false,
+    pattern: 1,
+    mean: 30,
+    cv: 0.4
+  },
+  service : {
+    mode       : "fill",    //  "cycle" | "fill"
+    cycleSL    : 0.95,      //  αサービス率 (= Cycle-SL)
+    fillTarget : 0.95       //  βサービス率 (= Fill-rate)
+  },
+  flow: {
+    RawPrc:   { cap: 200, speed: 5, lot: 100, allowOver: true, orderInterval: 5 },
+    Manuf:    { cap: 180, speed: 3, matPerPrd: 1, prdPerMat: 2, lot: 30, allowOver: true, orderInterval: 3 },
+    F2W:      { cap: 150, speed: 2, allowOver: true, orderInterval: 2 },
+    W2S:      { cap:  90, speed: 1, allowOver: false, orderInterval: 1 }
+  },
+  stock: {
+    Raw:       { cap: 200, initial: 100, allowOver: true },
+    Factory:   { cap: 180, initial:  90, allowOver: true },
+    Warehouse: { cap: 240, initial: 120, allowOver: true },
+    Store:     { cap:  80, initial:  80, allowOver: false }
+  },
+  push: {
+    rawToManuf: false,
+    factoryToWh: false,
+    warehouseToStore: false
+  },
+  basePrice: 200,
+  shortageCost: 100,
+  unitCosts: {
+    "RawMat": 10,
+    "Manuf": 20,
+    "ManufEx": 30,
+    "Trans:F2W": 6,
+    "TransEx:F2W": 9,
+    "Trans:W2S": 4,
+    "TransEx:W2S": 6,
+    "Hold:Raw": 1,
+    "HoldEx:Raw": 3,
+    "Hold:Factory": 2,
+    "HoldEx:Factory": 4,
+    "Hold:Warehouse": 3,
+    "HoldEx:Warehouse": 6,
+    "Hold:Store": 2,
+    "HoldEx:Store": 4,
+    "Fixed:RawPrc": 200,
+    "Fixed:Manuf": 500,
+    "Fixed:F2W": 400,
+    "Fixed:W2S": 400,
+    "Fixed:Raw": 100,
+    "Fixed:Factory": 100,
+    "Fixed:Warehouse": 150,
+    "Fixed:Store": 150
+  }
+};
+let flowInputMode = "auto";   // "auto" or "manual"
+let manualFlowRequest = {
+  RawPrc: 0,
+  Manuf: 0,
+  F2W: 0,
+  W2S: 0
+};
+/* =====================================================================================================
+   2. ユーティリティ
+===================================================================================================== */
+let turnCostAcc = null;
+
+const addCost = (o, amt, label) => {
+  o.costs.push({ amount: amt, label });
+  if (turnCostAcc) {
+    turnCostAcc[label] = (turnCostAcc[label] || 0) + amt;
+  }
+};
+
+const accumulate = arr =>
+  arr.reduce((a, p) => {
+    p.costs.forEach(c => a[c.label] = (a[c.label] || 0) + c.amount);
+    return a;
+  }, {});
+
+function randNorm(m, s) {
+  const u1 = Math.random(), u2 = Math.random();
+  return m + s * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+function invNorm(p) {
+  const a = [-39.696830, 220.946098, -275.928510],
+        b = [-54.476098, 161.585836, -155.698979],
+        c = [-0.007784894002, -0.322396458, -2.400758, -2.549732],
+        d = [0.007784695709, 0.322467129, 2.445134, 3.754408],
+        pl = 0.02425, ph = 1 - pl;
+  let q, r;
+  if (p < pl) {
+    q = Math.sqrt(-2 * Math.log(p));
+    return (((c[0] * q + c[1]) * q + c[2]) * q + c[3]) /
+           (((d[0] * q + d[1]) * q + d[2]) * q + d[3]);
+  }
+  if (p > ph) {
+    q = Math.sqrt(-2 * Math.log(1 - p));
+    return -(((c[0] * q + c[1]) * q + c[2]) * q + c[3]) /
+             (((d[0] * q + d[1]) * q + d[2]) * q + d[3]);
+  }
+  q = p - 0.5;
+  r = q * q;
+  return (((a[0] * r + a[1]) * r + a[2]) * q) /
+           ((b[0] * r + b[1]) * r + b[2]) * q + q;
+}
+
+function getOrderInterval(key) {
+  const map = { Store: "W2S", Warehouse: "F2W", Factory: "Manuf", Raw: "RawPrc" };
+  const id = config.flow[key] ? key : map[key] || "RawPrc";
+  return config.flow[id]?.orderInterval ?? 1;
+}
+
+function physicalLT(stage) {
+  switch (stage) {
+    case "Store"    : return flows.W2S.speed;
+    case "Warehouse": return flows.F2W.speed + flows.W2S.speed;
+    case "Factory"  : return flows.Manuf.speed
+                      + flows.F2W.speed
+                      + flows.W2S.speed;
+    case "Raw"      : return flows.RawPrc.speed
+                      + flows.Manuf.speed
+                      + flows.F2W.speed
+                      + flows.W2S.speed;
+    default         : return 0;
+  }
+}
+
+/* --------------------------------------------------------
+ * 目標在庫量 (Base-stock level) を返す  
+ *  ─ CycleStock : 平均需要 × 注文間隔  
+ *  ─ SafetyStock: α-SL(cycle) or β-SL(Fill-Rate) を選択
+ ------------------------------------------------------- */
+function targetBaseStock(stage) {
+
+  /* ---------- 1) 需要平均 μ と 標準偏差 σ ---------- */
+  const μ = stage === "Raw"
+          ? prodToRaw(config.demand.mean)
+          : config.demand.mean;
+  const σ = μ * (config.demand.cv || 0);
+
+  /* ---------- 2) サイクル在庫 (周期 × μ) ---------- */
+  const ltPhys  = physicalLT(stage);
+  const review  = getOrderInterval(stage) || 1;
+  const cycleStock = μ * review;
+  const ltEff   = Math.max(1, ltPhys);
+
+  /* ---------- 3) 安全在庫 ---------- */
+  const svc = config.service || {};
+  const useFill = (svc.mode ?? "fill") === "fill";
+  let safetyStock;
+
+  if (!useFill) {                   // α (=cycleSL)
+    const z = invNorm(svc.cycleSL);
+    safetyStock = z * σ * Math.sqrt(ltEff);
+
+  } else {                          // β (=fillTarget)
+    const zα = invNorm(svc.cycleSL);
+    const φ  = Math.exp(-0.5 * zα * zα) / Math.sqrt(2 * Math.PI);
+    const σL  = σ * Math.sqrt(ltEff);
+    const ES  = σL * (φ - zα * (1 - svc.cycleSL));
+    const tgt = svc.fillTarget;
+    safetyStock = ES / (1 - tgt);   // Kingman
+  }
+
+  /* ---------- 4) 合算 & 整数化 ---------- */
+  return Math.round(cycleStock + Math.max(0, safetyStock));
+}
+
+function calcEchelonStock(st) {
+  switch (st) {
+    case "Raw":
+      return sp.Raw.count()
+        + prodToRaw(sp.Factory.count() + sp.Warehouse.count() + sp.Store.count())
+        + prodToRaw(flows.Manuf.queue.length + flows.F2W.queue.length + flows.W2S.queue.length)
+        + flows.RawPrc.queue.length;
+    case "Factory":
+      return sp.Factory.count() + sp.Warehouse.count() + sp.Store.count()
+        + flows.Manuf.queue.length + flows.F2W.queue.length + flows.W2S.queue.length;
+    case "Warehouse":
+      return sp.Warehouse.count() + sp.Store.count()
+        + flows.F2W.queue.length + flows.W2S.queue.length;
+    case "Store":
+      return sp.Store.count() + flows.W2S.queue.length;
+    default:
+      return 0;
+  }
+}
+
+function roundLot(q, flowId) {
+  const lot = config.flow[flowId]?.lot || 1;
+  return Math.floor(q / lot) * lot;
+}
+
+function ceilLot(q, flowId) {
+  const lot = config.flow[flowId]?.lot || 1;
+  return q <= 0 ? 0 : Math.ceil(q / lot) * lot;
+}
+
+const prodToRaw = q => q * (matPerPrd() / prdPerMat());
+const rawToProd = q => q * (prdPerMat() / matPerPrd());
+
+const cumOrderInterval = stage => {
+  const map = {
+    Store:      getOrderInterval("W2S"),
+    Warehouse:  getOrderInterval("W2S") + getOrderInterval("F2W"),
+    Factory:    getOrderInterval("W2S") + getOrderInterval("F2W")
+                 + getOrderInterval("Manuf"),
+    Raw:        getOrderInterval("W2S") + getOrderInterval("F2W")
+                 + getOrderInterval("Manuf")
+  };
+  return (map[stage] || 0);
+};
+
+/* =====================================================================================================
+   3. コアモデルクラス
+===================================================================================================== */
+/*──────────────────── 0. コスト mix-in ─────────────────────*/
+const CostMixin = Base => class extends Base{
+  addUnit(label,qty=1){ addCost(this,(config.unitCosts[label]||0)*qty,label); }
+};
+
+/*──────────────────── 1. 基底エンティティ ───────────────────*/
+class Entity{
+  constructor(pfx){
+    this.id = pfx + String(++Entity.seq[pfx]).padStart(5,"0");
+    this.costs = [];
+  }
+  total(){ return this.costs.reduce((s,c)=>s+c.amount,0); }
+}
+Entity.seq = {P:0,M:0};
+
+/*──────────────────── 2. RawMat / Product ───────────────────*/
+class RawMat extends CostMixin(Entity){ constructor(){ super("M"); this.rawDays=0; } }
+class Product  extends CostMixin(Entity){
+  constructor(){ super("P");
+    this.rawDays=this.factoryDays=this.warehouseDays=this.storeDays=0;
+    this.materials=[]; }
+}
+
+/*──────────────────── 3. Stock ─────────────────────────*/
+class Stock{
+  constructor(id){
+    Object.assign(this,{id,inv:[]},config.stock[id]);
+    this.h   = config.unitCosts["Hold:"+id];
+    this.hEx = config.unitCosts["HoldEx:"+id]||this.h*2;
+    this.f   = config.unitCosts["Fixed:"+id];
+  }
+  add(p){ this.inv.push(p); }
+  remove(n){ return this.inv.splice(0,n); }
+  count(){ return this.inv.length; }
+  holdTick(){
+    this.inv.forEach((p,i)=>{
+      addCost(p,i>=this.cap?this.hEx:this.h,i>=this.cap?`HoldEx:${this.id}`:`Hold:${this.id}`);
+      if(this.id==="Raw")       p.rawDays++;
+      if(this.id==="Factory")   p.factoryDays++;
+      if(this.id==="Warehouse") p.warehouseDays++;
+      if(this.id==="Store")     p.storeDays++;
+    });
+  }
+  applyFixed() {
+    const n = this.inv.length;
+    const per = n ? this.f / n : 0;
+    this.inv.forEach(p => p.costs.push({amount: per, label: `Fixed:${this.id}`}));
+    if (turnCostAcc) turnCostAcc[`Fixed:${this.id}`] = (turnCostAcc[`Fixed:${this.id}`] || 0) + this.f;
+  }
+}
+
+/*──────────────────── 4. FlowBase (tick 共通) ─────────────────*/
+class FlowBase{
+  constructor(id,dest){
+    this.id=id;
+    this.dest=dest;
+    Object.assign(this,config.flow[id]);
+    this.queue=[];
+    this.f = config.unitCosts["Fixed:"+id]||0;
+    this.interval=this.orderInterval||1;
+    this.timer=0;
+  }
+  applyFixed() {
+    const n = this.queue.length;
+    const per = n ? this.f / n : 0;
+    this.queue.forEach(q => q.item.costs.push({amount: per, label: `Fixed:${this.id}`}));
+    if (turnCostAcc) turnCostAcc[`Fixed:${this.id}`] = (turnCostAcc[`Fixed:${this.id}`] || 0) + this.f;
+  }
+  tick(){
+    this.queue.forEach(q=>--q.rem);
+    const arrived=this.queue.filter(q=>q.rem<=0);
+    this.queue = this.queue.filter(q=>q.rem>0);
+    if(this.dest) arrived.forEach(q=>this.dest.add(q.item));
+    return arrived.length;
+  }
+  issue(qty,enqueueFn){
+    if(this.timer>0){
+      if(qty>0 && this.id==="Manuf") this.timer = 0;
+      else { this.timer--; if(qty<=0) return 0; }
+    }
+    if(qty<=0||this.timer>0) return 0;
+    const done=enqueueFn(qty)||0;
+    this.timer=this.interval-1;
+    return done;
+  }
+}
+
+/*──────────────────── 5. RawPrc ────────────────────────*/
+class RawPrc extends FlowBase {
+  constructor(dest) {
+    super("RawPrc", dest);
+    this.v = config.unitCosts.RawMat;
+  }
+
+  enqueue(q) {
+    let done = 0;
+    for (let i = 0; i < q; i++) {
+
+      const m = new RawMat();
+      addCost(m, this.v, "RawMat");
+
+      if (this.speed === 0) {     // ★即納
+        this.dest.add(m);
+      } else {
+        this.queue.push({ item: m, rem: this.speed });
+      }
+      done++;
+    }
+    return done;
+  }
+}
+
+/*──────────────────── 6. Manuf ────────────────────────*/
+class Manuf extends FlowBase {
+  constructor(dest, raw) {
+    super("Manuf", dest);
+    this.raw = raw;
+    this.v   = config.unitCosts.Manuf;
+    this.vEx = config.unitCosts.ManufEx;
+  }
+
+  enqueue(qty) {
+    let produced = 0, consumed = 0;
+
+    while (produced < qty && this.raw.count() >= this.matPerPrd) {
+
+      if (!this.allowOver &&
+          this.dest.count() + this.queue.length >= this.cap) break;
+
+      /* 材料取り出し ------------------------------------------------ */
+      const mats = this.raw.remove(this.matPerPrd);
+      consumed  += this.matPerPrd;
+
+      /* 材料コストを製品へ按分 ------------------------------------ */
+      const per = [];
+      mats.forEach(m =>
+        m.costs.forEach(c =>
+          per.push({ amount: c.amount / this.prdPerMat, label: c.label })));
+
+      /* 製品を作る -------------------------------------------------- */
+      for (let j = 0; j < this.prdPerMat && produced < qty; j++) {
+        const p = new Product();
+        p.materials.push(...mats.map(m => m.id));
+        p.rawDays = mats.reduce((s, m) => s + (m.rawDays || 0), 0);
+        per.forEach(c => p.costs.push({ ...c }));
+        addCost(p, this.v, "Manuf");
+        produced++;
+
+        /* speed==0: 直接 Factory 在庫へ -------------------------------- */
+        if (this.speed === 0) {
+          this.dest.add(p);
+        } else {
+          this.queue.push({ item: p, rem: this.speed });
+        }
+      }
+    }
+    return { produced, consumed };
+  }
+}
+
+/*──────────────────── 7. Transport ──────────────────────*/
+class Transport extends FlowBase{
+  constructor(id,from,to){
+    super(id,to); this.from=from;
+    this.v=config.unitCosts["Trans:"+id];
+    this.vEx=config.unitCosts["TransEx:"+id];
+  }
+}
+
+/* =====================================================================================================
+   4. 初期在庫生成・シミュレーション構築
+===================================================================================================== */
+let sp, flows;
+
+function initInv() {
+  const mp = config.flow.Manuf.matPerPrd || 1;
+  const pp = config.flow.Manuf.prdPerMat || 1;
+  const matCostPerProduct = (mp * config.unitCosts.RawMat) / pp;
+
+  // Raw
+  for (let i = 0; i < config.stock.Raw.initial; i++) {
+    const m = new RawMat();
+    addCost(m, config.unitCosts.RawMat, "RawMat");
+    sp.Raw.add(m);
+  }
+
+  // Factory
+  for (let i = 0; i < config.stock.Factory.initial; i++) {
+    // ダミーRawMatを作り材料IDを登録
+    const m = new RawMat();
+    addCost(m, config.unitCosts.RawMat, "RawMat");
+    const p = new Product();
+    p.materials.push(m.id);
+    addCost(p, matCostPerProduct, "RawMat");
+    addCost(p, config.unitCosts.ManufEx, "ManufEx");
+    sp.Factory.add(p);
+  }
+
+  // Warehouse
+  for (let i = 0; i < config.stock.Warehouse.initial; i++) {
+    const m = new RawMat();
+    addCost(m, config.unitCosts.RawMat, "RawMat");
+    const p = new Product();
+    p.materials.push(m.id);
+    addCost(p, matCostPerProduct, "RawMat");
+    addCost(p, config.unitCosts.ManufEx, "ManufEx");
+    addCost(p, config.unitCosts["TransEx:F2W"], "TransEx:F2W");
+    sp.Warehouse.add(p);
+  }
+
+  // Store
+  for (let i = 0; i < config.stock.Store.initial; i++) {
+    const m = new RawMat();
+    addCost(m, config.unitCosts.RawMat, "RawMat");
+    const p = new Product();
+    p.materials.push(m.id);
+    addCost(p, matCostPerProduct, "RawMat");
+    addCost(p, config.unitCosts.ManufEx, "ManufEx");
+    addCost(p, config.unitCosts["TransEx:F2W"], "TransEx:F2W");
+    addCost(p, config.unitCosts["TransEx:W2S"], "TransEx:W2S");
+    sp.Store.add(p);
+  }
+}
+
+function buildSimulation() {
+  sp = {
+    Raw:       new Stock("Raw"),
+    Factory:   new Stock("Factory"),
+    Warehouse: new Stock("Warehouse"),
+    Store:     new Stock("Store")
+  };
+  flows = {
+    RawPrc : new RawPrc (sp.Raw),
+    Manuf   : new Manuf  (sp.Factory,  sp.Raw),
+    F2W  : new Transport("F2W", sp.Factory,   sp.Warehouse),
+    W2S  : new Transport("W2S", sp.Warehouse, sp.Store)
+  };
+  initInv();
+
+  // --- Day0: 初期在庫記録 ---
+  const raw0   = sp.Raw.count(), fac0 = sp.Factory.count(), wh0 = sp.Warehouse.count(), st0 = sp.Store.count();
+  psiLog.length = 0;
+  psiLog.push({
+    turn: 0,
+    rawInTransit: 0,
+    facInTransit: 0,
+    fwInTransit: 0,
+    wsInTransit: 0,
+    raw:       { before: 0, produced: 0, consumed: 0, after: raw0 },
+    factory:   { before: 0, produced: 0, shipped: 0, after: fac0 },
+    warehouse: { before: 0, inflow: 0, outflow: 0, after: wh0 },
+    store:     { before: 0, inflow: 0, outflow: 0, after: st0 },
+    shortage: 0,
+    demand: 0,
+    forecast: config.demand.mean
+  });
+  doCostsByTurn.length = 0;
+  const mp = config.flow.Manuf.matPerPrd || 1;
+  const pp = config.flow.Manuf.prdPerMat || 1;
+  let invSell;
+  const rawEqProduct = (config.stock.Raw.initial * pp) / mp;
+  invSell =
+    (config.stock.Store.initial +
+     config.stock.Warehouse.initial +
+     config.stock.Factory.initial +
+     rawEqProduct) * config.basePrice;
+  doCostsByTurn.push({
+    turn: 0,
+    sold: 0,
+    actualCost: {},
+    revenue: 0,
+    invSell
+  });
+}
+buildSimulation();
+
+function resetSimulation() {
+  try {
+    const newCfg = JSON.parse(document.getElementById("config-editor").value);
+    Object.keys(config).forEach(k => delete config[k]);
+    Object.assign(config, newCfg);
+  } catch (e) {
+    alert("JSON 解析エラー:\n" + e.message);
+    return;
+  }
+  turn = 1;
+  doCostsByTurn.length = 0;
+  soldProducts.length = 0;
+  psiLog.length = 0;
+  Entity.seq = { P: 0, M: 0 };
+
+  // lot, matPerPrd, prdPerMat など欠損にデフォルト値をセット
+  Object.keys(config.flow).forEach(k => {
+    config.flow[k].lot       = config.flow[k].lot      ?? 1;
+    config.flow[k].matPerPrd    = config.flow[k].matPerPrd   ?? 1;
+    config.flow[k].prdPerMat    = config.flow[k].prdPerMat   ?? 1;
+    config.flow[k].cap       = config.flow[k].cap      ?? 1;
+    config.flow[k].speed     = config.flow[k].speed    ?? 1;
+    config.flow[k].allowOver = config.flow[k].allowOver ?? true;
+    config.flow[k].orderInterval = config.flow[k].orderInterval ?? 1;
+  });
+
+  buildSimulation();
+  updateTables();
+  renderPSIAnimation();
+}
+
+
+/* =====================================================================================================
+   5. 出荷処理ヘルパ
+===================================================================================================== */
+function shipItems(from, toFlow, dest, qty) {
+
+  /* ── 受け側のキャパシティ制約 ───────────────────────── */
+  if (!dest.allowOver) {
+    const destAvail = dest.cap - dest.count() - toFlow.queue.length;
+    qty = Math.max(0, Math.min(qty, destAvail));
+  }
+
+  /* ── 実際に在庫を抜き出す ─────────────────────────── */
+  const items = from.remove(qty);
+
+  items.forEach((it, i) => {
+
+    /* ===== speed == 0 ⇒ キューに積まず即着 ===== */
+    if (toFlow.speed === 0) {
+      // ① 輸送コスト計上（Ex/通常の判定は「発送順」をそのまま使用）
+      const over   = i >= toFlow.cap;
+      const label  = over ? `TransEx:${toFlow.id}` : `Trans:${toFlow.id}`;
+      const amount = over ? toFlow.vEx            : toFlow.v;
+      addCost(it, amount, label);
+      if (turnCostAcc) turnCostAcc[label] = (turnCostAcc[label] || 0) + amount;
+
+      // ② 着荷
+      dest.add(it);
+      return;
     }
 
-    document.getElementById('simBtn').addEventListener('click', () => {
-      const params = { foo: 123 };
-      const result = simulateTurn(params);
-      console.log('simulateTurn result:', result);
-      alert(JSON.stringify(result));
+    /* ===== 従来どおりの搬送（リードタイム > 0） ===== */
+    const idx    = toFlow.queue.length + i;
+    const over   = idx >= toFlow.cap;
+    const label  = over ? `TransEx:${toFlow.id}` : `Trans:${toFlow.id}`;
+    const amount = over ? toFlow.vEx            : toFlow.v;
+    addCost(it, amount, label);
+    if (turnCostAcc) turnCostAcc[label] = (turnCostAcc[label] || 0) + amount;
+
+    toFlow.queue.push({ item: it, rem: toFlow.speed });
+  });
+
+  return items.length;     // 発送総数
+}
+
+/* =====================================================================================================
+   6. 需要計算ヘルパ
+===================================================================================================== */
+function mulberry32(a) {
+  return function() {
+    var t = a += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+function deterministicZ(turn, pattern) {
+  pattern = pattern || 314159; 
+  const rand = mulberry32(((pattern + 31) * 0xabcdef + turn * 0x123456) >>> 0);
+  const u1 = rand() * 0.999999 + 0.000001;
+  const u2 = rand() * 0.999999 + 0.000001;
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+const demandGen = {
+  gen() {
+    const mu = config.demand.mean;
+    const cv = config.demand.cv || 0;
+    if (config.demand.random !== false) {
+      const sigma = mu * cv;
+      return Math.max(0, Math.round(randNorm(mu, sigma)));
+    } else {
+      const z = deterministicZ(turn, config.demand.pattern || 0);
+      const sigma = mu * cv;
+      return Math.max(0, Math.round(mu + sigma * z));
+    }
+  }
+};
+
+/* =====================================================================================================
+   7. 需給実行
+===================================================================================================== */
+
+/*──────────────────── A. 小さなヘルパ ────────────────────*/
+const matPerPrd = ()=>config.flow.Manuf.matPerPrd||1;
+const prdPerMat = ()=>config.flow.Manuf.prdPerMat||1;
+const clamp  =(v,hi)=>Math.max(0,Math.min(v,hi));
+const lotRound=(q,id)=>roundLot(q,id);
+
+/*──────────────────── B. Pull 量計算 ────────────────────*/
+function pullGap(stage,flowId){
+  const target = targetBaseStock(stage);
+  const gap    = Math.max(0, target - calcEchelonStock(stage));
+  return ceilLot(gap,flowId);
+}
+
+/*──────────────────── C. Push 超過分加算 ──────────────────*/
+function addPush(plan){
+  if(config.push.warehouseToStore){
+    plan.wsShip += lotRound(Math.max(0,sp.Warehouse.count()-sp.Warehouse.cap),"W2S");
+  }
+  if(config.push.factoryToWh){
+    plan.fwShip += lotRound(Math.max(0,sp.Factory.count()-sp.Factory.cap),"F2W");
+  }
+  if(config.push.rawToManuf){
+    const overR = Math.max(0, sp.Raw.count() - sp.Raw.cap);
+    const prodNeed = overR * prdPerMat();
+    plan.makeQty  += ceilLot(prodNeed, "Manuf");
+  }
+  return plan;
+}
+
+/*──────────────────── D. キャパ／材料など制約でクリップ ──────────*/
+function clipByConstraints(plan){
+  // 在庫実在量
+  plan.wsShip = Math.min(plan.wsShip, sp.Warehouse.count());
+  plan.fwShip = Math.min(plan.fwShip, sp.Factory.count());
+
+  // 材料由来上限
+  const maxMat = Math.floor(sp.Raw.count()/matPerPrd())*prdPerMat();
+  plan.makeQty = Math.min(plan.makeQty, maxMat);
+
+  // allowOver==false のフロー上限
+  [
+    {id:"W2S", prop:"wsShip"},
+    {id:"F2W", prop:"fwShip"},
+    {id:"Manuf",prop:"makeQty"},
+    {id:"RawPrc",prop:"rawOrder"}
+  ].forEach(({id,prop})=>{
+    const f = config.flow[id];
+    if(!f.allowOver){
+      const virtualCap = (id==="RawPrc")
+        ? f.cap + prodToRaw(plan.makeQty)
+        : f.cap;
+      plan[prop] = clamp(plan[prop], virtualCap - flows[id].queue.length);
+    }
+    plan[prop]=lotRound(plan[prop],id);
+  });
+  return plan;
+}
+
+/*──────────────────── E. 自動プラン生成 decide() ─────────────*/
+function decide(){
+  let plan = {
+    rawOrder : pullGap("Raw"      ,"RawPrc"),
+    makeQty  : pullGap("Factory"  ,"Manuf"),
+    fwShip   : pullGap("Warehouse","F2W"),
+    wsShip   : pullGap("Store"    ,"W2S")
+  };
+  plan = addPush(plan);
+  plan = clipByConstraints(plan);
+
+  plan.rawOrder = rawOrderNeededEchelon(plan);
+  return plan;
+}
+
+function rawOrderNeededEchelon(plan){
+  const needNow = plan.makeQty * matPerPrd();
+  const echelon = calcEchelonStock("Raw")
+                  - needNow;
+  const target  = targetBaseStock("Raw");
+  const gap     = Math.max(0, target - echelon);
+  return ceilLot(gap, "RawPrc");
+}
+
+/*──────────────────── F. 手入力の補助整形 ──────────────────*/
+function manualPlan(){
+  const base = decide();
+  const getVal = (k,flow)=>  (manualFlowRequest[flow]===""||manualFlowRequest[flow]==null)
+                              ? base[k] : +manualFlowRequest[flow];
+
+  let plan={
+    rawOrder : getVal("rawOrder","RawPrc"),
+    makeQty  : getVal("makeQty" ,"Manuf"),
+    fwShip   : getVal("fwShip"  ,"F2W"),
+    wsShip   : getVal("wsShip"  ,"W2S")
+  };
+  return clipByConstraints(plan);
+}
+
+/*──────────────────── G. runTurn ──────────────────────*/
+function runTurn() {
+
+  turnCostAcc = {};
+
+  /* --- 0) 前在庫 snapshot --------------------------------------- */
+  const snap = () => ({
+    R: sp.Raw.count(), F: sp.Factory.count(),
+    W: sp.Warehouse.count(), S: sp.Store.count()
+  });
+  const before = snap();
+
+  /* --- 1) 到着処理（tick） -------------------------------------- */
+  const arrivals = {
+    R: flows.RawPrc.tick(),
+    F: flows.Manuf.tick(),
+    W: flows.F2W.tick(),
+    S: flows.W2S.tick()
+  };
+
+  /* --- 2) 発注プラン決定 ---------------------------------------- */
+  const plan = (flowInputMode === "manual") ? manualPlan() : decide();
+
+  /* (Auto モード時は入力欄リセット) */
+  if (flowInputMode === "auto") {
+    manualFlowRequest = { RawPrc: 0, Manuf: 0, F2W: 0, W2S: 0 };
+    ["inputRawPrc", "inputManuf", "inputF2W", "inputW2S"]
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = 0; });
+  }
+
+  /* --- 3) フローへ投入 ------------------------------------------ */
+  let rawOrdered = 0, makeStarted = 0, rawUsed = 0;
+
+  const wsShip = flows.W2S.issue(plan.wsShip,
+    q => shipItems(sp.Warehouse, flows.W2S, sp.Store, q));
+  const fwShip = flows.F2W.issue(plan.fwShip,
+    q => shipItems(sp.Factory, flows.F2W, sp.Warehouse, q));
+
+  flows.Manuf.issue(plan.makeQty, q => {
+    const { produced, consumed } = flows.Manuf.enqueue(q);
+    makeStarted += produced; rawUsed += consumed;
+    return produced;
+  });
+
+  flows.RawPrc.issue(plan.rawOrder, q => {
+    rawOrdered += flows.RawPrc.enqueue(q);
+    return rawOrdered;
+  });
+
+  /* --- 3.5) 即納分の補正 --------------------------------------- */
+  const instantRaw = (flows.RawPrc.speed === 0) ? rawOrdered   : 0;
+  const instantFac = (flows.Manuf.speed  === 0) ? makeStarted : 0;
+  const instantFW  = (flows.F2W.speed    === 0) ? fwShip      : 0;
+  const instantWS  = (flows.W2S.speed    === 0) ? wsShip      : 0;
+
+  /* --- 4) 需要生成 & 販売 -------------------------------------- */
+  const demand   = demandGen.gen();
+  const soldList = sp.Store.remove(Math.min(demand, sp.Store.count()));
+  const soldQty  = soldList.length;
+  const shortage = demand - soldQty;
+  soldList.forEach(p => { p.turn = turn; soldProducts.push(p); });
+
+  /* --- 5) 後在庫 snapshot -------------------------------------- */
+  const after = snap();
+
+  /* --- 6) PSI ログ -------------------------------------------- */
+  psiLog.push({
+    turn,
+    rawOrdered, makeStarted,
+    rawInTransit: (flows.RawPrc.speed === 0) ? 0 : flows.RawPrc.queue.length,
+    facInTransit: (flows.Manuf.speed  === 0) ? 0 : flows.Manuf.queue.length,
+    fwInTransit : (flows.F2W.speed    === 0) ? 0 : flows.F2W.queue.length,
+    wsInTransit : (flows.W2S.speed    === 0) ? 0 : flows.W2S.queue.length,
+
+    raw       : { before: before.R,
+                  produced: arrivals.R + instantRaw,
+                  consumed: rawUsed,
+                  after:    after.R },
+
+    factory   : { before: before.F,
+                  produced: arrivals.F + instantFac,
+                  shipped : fwShip,
+                  after:    after.F },
+
+    warehouse : { before: before.W,
+                  inflow : arrivals.W + instantFW,
+                  outflow: wsShip,
+                  after:   after.W },
+
+    store     : { before: before.S,
+                  inflow : arrivals.S + instantWS,
+                  outflow: soldQty,
+                  after:   after.S },
+
+    shortage, demand,
+    forecast: config.demand.mean
+  });
+
+  /* --- 7) コスト計算 ------------------------------------------- */
+  calcTurnCost(soldList, shortage);
+
+  /* --- 8) UI 更新 ---------------------------------------------- */
+  turn++;
+  updateTables();
+  checkPSIConsistency();
+}
+
+/*──────────────────── H. コスト計算 ────────────────────*/
+function calcTurnCost(soldList,shortage){
+  [sp.Raw,sp.Factory,sp.Warehouse,sp.Store].forEach(st=>st.holdTick());
+  [flows.RawPrc,flows.Manuf,flows.F2W,flows.W2S].forEach(fl=>fl.applyFixed());
+  [sp.Raw,sp.Factory,sp.Warehouse,sp.Store].forEach(st=>st.applyFixed());
+
+  if(shortage){
+    turnCostAcc.Shortage=(turnCostAcc.Shortage||0)+shortage*config.shortageCost;
+  }
+
+  const eqFinished = (sp.Raw.count() * prdPerMat()) / matPerPrd();
+  const rawOrderInTransit = (flows.RawPrc.queue.length * prdPerMat()) / matPerPrd();
+  const invSell = (
+    sp.Store.count() + sp.Warehouse.count() + sp.Factory.count() +
+    flows.Manuf.queue.length + flows.F2W.queue.length + flows.W2S.queue.length +
+    eqFinished + rawOrderInTransit
+  ) * config.basePrice;
+
+  doCostsByTurn.push({
+    turn,
+    sold: soldList.length,
+    revenue: soldList.length * config.basePrice,
+    actualCost: {...turnCostAcc},
+    invSell
+  });
+  turnCostAcc = null;
+}
+
+/* ========================================================================================================
+   8. PSI整合チェック
+======================================================================================================== */
+
+function checkPSIConsistency() {
+
+  if (!psiLog.length) return;
+  const p = psiLog.at(-1);          // 今ターン
+  const e = [];                     // エラー格納
+
+  /* ------------------------------------------------------------
+     1) 在庫勘定（Raw / Factory / Warehouse / Store）
+  ------------------------------------------------------------ */
+  if (p.raw.before + p.raw.produced - p.raw.consumed !== p.raw.after)
+    e.push(`Raw   : ${p.raw.before}+${p.raw.produced}-${p.raw.consumed}≠${p.raw.after}`);
+
+  if (p.factory.before + p.factory.produced - p.factory.shipped !== p.factory.after)
+    e.push(`Factory: ${p.factory.before}+${p.factory.produced}-${p.factory.shipped}≠${p.factory.after}`);
+
+  if (p.warehouse.before + p.warehouse.inflow - p.warehouse.outflow !== p.warehouse.after)
+    e.push(`Warehouse: ${p.warehouse.before}+${p.warehouse.inflow}-${p.warehouse.outflow}≠${p.warehouse.after}`);
+
+  if (p.store.before + p.store.inflow - p.store.outflow !== p.store.after)
+    e.push(`Store: ${p.store.before}+${p.store.inflow}-${p.store.outflow}≠${p.store.after}`);
+
+  /* ------------------------------------------------------------
+     2) フロー in-Transit 勘定
+        speed == 0 のフローは in-Transit が無いので対象外
+  ------------------------------------------------------------ */
+  const flows = ["RawPrc", "Manuf", "F2W", "W2S"]
+    .filter(f => (config.flow[f].speed || 0) > 0);
+
+  flows.forEach(f => {
+
+    const pNow  = p;
+    const pPrev = psiLog.length > 1 ? psiLog.at(-2) : null;
+    if (!pPrev) return;
+
+    const issued =
+      f === "RawPrc" ? pNow.rawOrdered        :
+      f === "Manuf"  ? pNow.makeStarted       :
+      f === "F2W"    ? pNow.factory.shipped   :
+                       pNow.warehouse.outflow;    // W2S
+
+    const key = (
+      f === "RawPrc" ? "rawInTransit" :
+      f === "Manuf"  ? "facInTransit" :
+      f === "F2W"    ? "fwInTransit"  :
+                       "wsInTransit"
+    );
+
+    const delta   = (pNow[key]  ?? 0) - (pPrev[key] ?? 0);
+    const arrived =
+      f === "RawPrc" ? pNow.raw.produced       :
+      f === "Manuf"  ? pNow.factory.produced   :
+      f === "F2W"    ? pNow.warehouse.inflow   :
+                       pNow.store.inflow;         // W2S
+
+    if (delta + arrived !== issued)
+      e.push(`${f}投入${issued} → ΔInTr${delta} + 到着${arrived} が一致しません`);
+  });
+
+  /* ------------------------------------------------------------
+     3) リードタイム後の到着チェック（speed ターン前投入＝今回到着）
+        こちらも speed==0 は除外
+  ------------------------------------------------------------ */
+flows.forEach(f => {
+  const speed = config.flow[f].speed || 1;
+  if (psiLog.length <= speed) return;          // 記録不足→検証スキップ
+
+  const pPast = psiLog.at(-1 - speed);         // speed ターン前
+  const arrived =
+    f === "RawPrc" ? p.raw.produced       :
+    f === "Manuf"  ? p.factory.produced   :
+    f === "F2W"    ? p.warehouse.inflow   :
+                     p.store.inflow;                   // W2S
+
+  /* ---- Day0 には投入フィールドが無い → 0 扱いにする ---- */
+  const issued =
+    f === "RawPrc" ? (pPast.rawOrdered       || 0) :
+    f === "Manuf"  ? (pPast.makeStarted      || 0) :
+    f === "F2W"    ? (pPast.factory.shipped  || 0) :
+                     (pPast.warehouse.outflow|| 0);    // W2S
+
+  if (arrived !== issued)
+    e.push(`${f}: ${speed}ターン前投入 ${issued} ⇔ 今回到着 ${arrived} の不整合`);
+});
+
+  /* ------------------------------------------------------------
+     4) 結果表示
+  ------------------------------------------------------------ */
+  if (e.length) {
+    const msg = `PSI inconsistent (Day ${p.turn}):\n` + e.join("\n");
+    console.error(msg);
+    alert(msg);
+  }
+}
+
+function calcTotalStock(p) {
+  const mp = config.flow.Manuf.matPerPrd || 1;
+  const pp = config.flow.Manuf.prdPerMat || 1;
+  const rawAsProduct = ((p.rawInTransit ?? 0) + (p.raw?.after ?? 0)) * (pp / mp);
+  const factory = (p.facInTransit ?? 0) + (p.factory?.after ?? 0);
+  const fw = (p.fwInTransit ?? 0) + (p.warehouse?.after ?? 0);
+  const ws = (p.wsInTransit ?? 0) + (p.store?.after ?? 0);
+  return rawAsProduct + factory + fw + ws;
+}
+
+/* ========================================================================================================
+    9. ログ表・ダッシュボード描画
+======================================================================================================== */
+(() => {
+  /* ===== 0) 共通ユーティリティ ================================================================ */
+  const uniq = a => [...new Set(a)];
+  const sum  = a => a.reduce((p,c)=>p+c,0);
+  const pad  = (v,d=2)=>Number.isFinite(v)?v.toFixed(d):v;
+
+  const costLabels = () =>
+    uniq(Object.keys(config.unitCosts)
+      .concat(doCostsByTurn.flatMap(d=>Object.keys(d.actualCost||{}))))
+      .filter(Boolean);
+
+  const buildTable = (head, rows)=>
+    `<div class="scroll-table-wrap"><table><tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr>`+
+    rows.map(r=>"<tr>"+r.map(c=>`<td>${c}</td>`).join("")+"</tr>").join("")+
+    "</table></div>";
+
+  // stays: サマリーの滞留カラム
+  const stays = ["AvgStay:R","AvgStay:F","AvgStay:W","AvgStay:S"];
+  const stayMap = {
+    "AvgStay:R": "rawDays",
+    "AvgStay:F": "factoryDays",
+    "AvgStay:W": "warehouseDays",
+    "AvgStay:S": "storeDays"
+  };
+  const stayKey = s => stayMap[s];
+
+  // スクロール位置の保持
+  const ScrollKeeper = {
+    _scrollMap: {},
+    save(tabId) {
+      const wrap = document.querySelector(`#${tabId} .scroll-table-wrap`);
+      if(wrap) this._scrollMap[tabId] = wrap.scrollTop;
+  },
+    restore(tabId) {
+      const wrap = document.querySelector(`#${tabId} .scroll-table-wrap`);
+      if(wrap && this._scrollMap[tabId] !== undefined)
+        wrap.scrollTop = this._scrollMap[tabId];
+    }
+  };
+
+
+  /* ===== 1) Summary (Activity Based Cost by Day, per Prd) ===================================== */
+  function renderSummary() {
+    ScrollKeeper.save("summary");
+
+    const lbls = costLabels().filter(l => l !== "Shortage");
+    const { sold: sold10, turns: last10 } = movingWindow(10);
+    const avgSaleQty = last10.length ? sold10.length / last10.length : 0;
+    const moving = buildSummaryRow("MA (10)", sold10, lbls, avgSaleQty, last10.length);
+
+    const rows = [moving];
+    doCostsByTurn.forEach(d => {
+      const soldTurn = soldProducts.filter(p => p.turn === d.turn);
+      rows.push(buildSummaryRow(""+d.turn, soldTurn, lbls, d.sold));
     });
-  </script>
+
+    const head = ["Day", "Sale Qty", ...lbls, ...stays, "Actv Bsd Cost", "Price", "Profit"];
+    document.getElementById("summary").innerHTML =
+    "<h2>Activity Based Cost Log by Day, per Product</h2>" + buildTable(head, rows);
+
+    ScrollKeeper.restore("summary");
+  }
+
+  function buildSummaryRow(label, soldArr, lbls, qtyOverride, windowLen) {
+    let isMovingAvg = label.startsWith("Mov");
+    let saleQty = isMovingAvg && windowLen ? soldArr.length / windowLen : soldArr.length;
+
+    const perUnitDiv = soldArr.length || 1;
+    const costCol = k =>
+    perUnitDiv ? sum(soldArr.map(p => sum(p.costs.filter(c => c.label === k).map(c => c.amount)))) / perUnitDiv : 0;
+    const objCost = Object.fromEntries(lbls.map(k => [k, costCol(k)]));
+
+    const stay = s => perUnitDiv ? sum(soldArr.map(p => p[stayKey(s)] || 0)) / perUnitDiv : 0;
+    const unitCost = sum(lbls.map(k => objCost[k]));
+    const revenue = config.basePrice;
+  let profit = (label == "0" || label == 0) ? 0 : revenue - unitCost;
+
+    return [
+      label,
+      isMovingAvg ? saleQty.toFixed(1) : pad(saleQty, 0),
+      ...lbls.map(k => pad(objCost[k], 2)),
+      ...stays.map(s => pad(stay(s), 2)),
+      pad(unitCost, 2),
+      pad(revenue, 2),
+      pad(profit, 2)
+    ];
+  }
+
+  /* ===== 2) Products (Activity Based Cost by Prd ID) ========================================== */
+  function renderProducts(){
+    ScrollKeeper.save("products");
+
+    const head=["Day","Prd ID","Price","Actv Bsd Cost","Profit",
+                "Stay<br>[R]","Stay<br>[F]","Stay<br>[W]","Stay<br>[S]",
+                "RawMat ID","Activity Based Cost Detail"];
+    const rows = soldProducts.map(p=>{
+      const cost = p.total();
+      return [
+        p.turn,p.id,
+        pad(config.basePrice,2),pad(cost,2),pad(config.basePrice-cost,2),
+        p.rawDays||0,p.factoryDays||0,p.warehouseDays||0,p.storeDays||0,
+        (p.materials||[]).join(", "),
+        p.costs.map(c=>`${c.label}:${pad(c.amount,2)}`).join(", ")
+      ];
+    });
+    document.getElementById("products").innerHTML =
+      "<h2>Activity Based Cost Log by Product ID</h2>" + buildTable(head,rows);
+
+    ScrollKeeper.restore("products");
+  }
+
+  /* ===== 3) PSI =============================================================================== */
+  function renderPSI(){
+    ScrollKeeper.save("psi");
+
+    const head=[
+      "Day","Raw Ord","Raw InTr","Raw Beg","Raw Recv","Raw Used","Raw End",
+      "Mfg Start","Mfg InPr",
+      "Fct Beg","Fct Recv","F2W Ship","Fct End",
+      "F2W InTr","Whs Beg","F2W Recv","W2S Ship","Whs End",
+      "W2S InTr","Str Beg","W2S Recv","Str Sale","Str End",
+      "Shrt","Dmd","Ttl Inv"
+    ];
+    const decIdx = [1, 7, 11, 16];
+    const thHtml = head.map((h, i) =>
+      `<th${decIdx.includes(i) ? ' class="psi-decision-col-head"' : ''}>${h}</th>`).join("");
+    const rows = psiLog.map(p=>{
+      const row = [
+        p.turn,
+        p.rawOrdered??0,p.rawInTransit,
+        p.raw.before,p.raw.produced,p.raw.consumed,
+        p.raw.after,p.makeStarted??0,p.facInTransit,
+        p.factory.before,p.factory.produced,p.factory.shipped,
+        p.factory.after,p.fwInTransit,p.warehouse.before,
+        p.warehouse.inflow,p.warehouse.outflow,
+        p.warehouse.after,p.wsInTransit,p.store.before,
+        p.store.inflow,p.store.outflow,p.store.after,
+        p.shortage,p.demand,calcTotalStock(p)
+      ];
+      return "<tr>" + row.map((c, i) => {
+        // Shrt列のみピンク背景に
+        if(i === 23 && c > 0) return `<td style="background:pink">${c}</td>`;
+        return `<td${decIdx.includes(i) ? ' class="psi-decision-col-cell"' : ''}>${c}</td>`;
+      }).join("") + "</tr>";
+    }).join("");
+    document.getElementById("psi").innerHTML =
+      "<h2>PSI Table</h2>"+
+      `<div class="scroll-table-wrap"><table><tr>${thHtml}</tr>${rows}</table></div>`;
+
+    ScrollKeeper.restore("psi");
+  }
+
+  function buildFlowControl(){
+    const flowLabels = {
+      RawPrc: "Raw",
+      Manuf: "Mfg",
+      F2W: "F2W",
+      W2S: "W2S"
+    };
+   return `
+     <div id="psi-manual-ctrl" style="margin-bottom:10px;text-align:center;">
+       <label>Auto:<input type="radio" name="flowMode" value="auto" ${flowInputMode==="auto"?"checked":""}></label>
+       <label>Manual:<input type="radio" name="flowMode" value="manual" ${flowInputMode==="manual"?"checked":""}></label>
+       ${["RawPrc","Manuf","F2W","W2S"].map(id=>
+          `<label>${flowLabels[id]}:
+            <input type="number" id="input${id.replace("2","2")}" min="0"
+                   value="${manualFlowRequest[id]||0}"
+                   class="input-decision-cell"
+                   ${flowInputMode==="auto"?"disabled":""} style="width:60px">
+           </label>`).join(" ")}
+     </div>`
+    ;
+  }
+
+  /* ===== 4) Cash-flow ======================================================================= */
+  function renderCashflow(){
+    ScrollKeeper.save("cashflow");
+
+    const labels = costLabels().filter(l => l !== "Shortage");
+    const {sold: sold10}=movingWindow(10);
+
+    const last10Turns = doCostsByTurn.filter(d=>d.turn!==0).slice(-10);
+    const moving      = buildCashRow("MA (10)", sold10, labels, last10Turns);
+
+    const rows=[moving];
+    doCostsByTurn.forEach(d=>{
+      rows.push(buildCashRow(d.turn,
+                 soldProducts.filter(p=>p.turn===d.turn),labels,d));
+    });
+
+    const head=["Day","Sale Qty",...labels,"COF","CIF","NCF","Inv Price"];
+    document.getElementById("cashflow").innerHTML =
+      "<h2>Cash Flow Log</h2>"+buildTable(head,rows);
+
+    ScrollKeeper.restore("cashflow");
+  }
+
+  function buildCashRow(label, soldArr, labels, turnInfo) {
+    const isAvg = Array.isArray(turnInfo);
+    const turnObj = !isAvg && turnInfo ? turnInfo : null;
+    const turns = isAvg ? turnInfo : null;
+    const qty = turnObj ? turnObj.sold
+      : isAvg ? sum(turns.map(t => t.sold)) / Math.max(turns.length, 1)
+      : soldArr.length;
+
+    const costByLbl = k => {
+      if (turnObj) return turnObj.actualCost[k] || 0;
+      if (isAvg) return sum(turns.map(t => t.actualCost[k] || 0)) / Math.max(turns.length, 1);
+      return 0;
+    };
+
+    const costs = labels.map(costByLbl);
+    const costTotal = sum(costs);
+    const revenue = turnObj ? turnObj.revenue
+      : isAvg ? sum(turns.map(t => t.revenue)) / Math.max(turns.length, 1)
+      : qty * config.basePrice;
+  const profit = revenue - costTotal;
+  const invSell = turnObj ? turnObj.invSell
+      : isAvg ? sum(turns.map(t => t.invSell)) / Math.max(turns.length, 1)
+      : 0;
+
+    return [
+      label,
+      isAvg ? qty.toFixed(1) : pad(qty, 0),
+      ...costs.map(v => pad(v, 0)),
+      pad(costTotal, 0), pad(revenue, 0), pad(profit, 0), pad(invSell, 0)
+    ];
+  }
+
+  /* ===== 5) Flow-mode / oninput ハンドラ ==================================================== */
+  function attachFlowModeHandlers(){
+    document.querySelectorAll('input[name="flowMode"]').forEach(r=>{
+      r.onchange=e=>{
+        flowInputMode=e.target.value;
+        const dis = flowInputMode==="auto";
+        ["RawPrc","Manuf","F2W","W2S"].forEach(id=>{
+          document.getElementById("input"+id.replace("2","2")).disabled = dis;
+        });
+        if(dis){
+          manualFlowRequest={RawPrc:0,Manuf:0,"F2W":0,"W2S":0};
+          ["RawPrc","Manuf","F2W","W2S"].forEach(id=>{
+            document.getElementById("input"+id.replace("2","2")).value=0;
+          });
+        }
+      };
+    });
+    document.getElementById("inputRawPrc").oninput = e=>manualFlowRequest.RawPrc = +e.target.value;
+    document.getElementById("inputManuf"  ).oninput = e=>manualFlowRequest.Manuf   = +e.target.value;
+    document.getElementById("inputF2W"   ).oninput = e=>manualFlowRequest.F2W = +e.target.value;
+    document.getElementById("inputW2S"   ).oninput = e=>manualFlowRequest.W2S = +e.target.value;
+  }
+
+  /* ===== 6) 補助関数 ======================================================================== */
+  function movingWindow(n){
+    const turns = doCostsByTurn.filter(d=>d.turn!==0).slice(-n).map(d=>d.turn);
+    return { turns, sold: soldProducts.filter(p=>turns.includes(p.turn)) };
+  }
+
+  /* ===== 7) ダッシュボード ================================================================== */
+  function renderDashboard(windowSize = 10) {
+
+  // --- タイトル＋累計サマリー1行 ---
+  // --- 累計値計算 ---
+const currDay = turn > 0 ? turn - 1 : 0;
+const ncfSum = doCostsByTurn
+  .filter(d => d.turn > 0)
+  .reduce((a, d) => a + (d.revenue - Object.values(d.actualCost || {}).reduce((x, y) => x + y, 0)), 0);
+const abpSum = soldProducts
+  .reduce((a, p) => a + (config.basePrice - p.total()), 0);
+const currInvPrice = doCostsByTurn.length > 0 ? doCostsByTurn.at(-1).invSell : 0;
+// ★ 累積Shortage Loss
+const shortageSum = doCostsByTurn
+  .filter(d => d.turn > 0)
+  .reduce((a, d) => a + (d.actualCost.Shortage || 0), 0);
+
+// --- サマリー表HTML修正（Shortage Loss列を追加） ---
+const summaryTitle = `<div style="font-weight:bold;font-size:1.15em;margin-bottom:2px;text-align:center;"><h3>Total Profit &amp; Inventory</h3></div>`;
+const summaryTable = `
+  <table style="margin:0 auto 18px auto; width:calc(100% - 12px); max-width:900px; font-size:1.15em; text-align:center;">
+    <tr>
+      <th style="text-align:center;">Day</th>
+      <th style="text-align:center;">Net Cash Flow</th>
+      <th style="text-align:center;">Activity Based Profit</th>
+      <th style="text-align:center;">Shortage Loss</th>
+      <th style="text-align:center;">Inventory Price</th>
+    </tr>
+    <tr>
+    <td style="text-align:center;font-weight:bold;">${currDay}</td>
+    <td style="text-align:center;font-weight:bold;">${ncfSum.toLocaleString()}</td>
+    <td style="text-align:center;font-weight:bold;">${Math.floor(abpSum).toLocaleString()}</td>
+    <td style="text-align:center;font-weight:bold;color:#d13f6d">${shortageSum.toLocaleString()}</td>
+    <td style="text-align:center;font-weight:bold;">${currInvPrice.toLocaleString()}</td>
+    </tr>
+  </table>
+`;
+    /* ---------- 0.  HTML骨格 ---------- */
+    document.getElementById("dashboard").innerHTML =
+      summaryTitle + summaryTable +  `
+      <div class="dashboard-grid">
+        <div class="dbox">
+          <h3>Sales &amp; Inventory Qty Changes</h3>
+          <canvas id="chart-qty"  width="420" height="260"></canvas>
+        </div>
+        <div class="dbox">
+          <h3>Inventory Days by Location (${windowSize}d)</h3>
+          <canvas id="chart-stock-pie" width="420" height="260"></canvas>
+        </div>
+        <div class="dbox">
+          <h3>Net CF &amp; Activity Based Profit Changes</h3>
+          <canvas id="chart-cf"   width="420" height="260"></canvas>
+        </div>
+        <div class="dbox">
+          <h3>Activity Based Cost Ratio% (${windowSize}d)</h3>
+          <canvas id="chart-cost-pie" width="420" height="260"></canvas>
+        </div>
+        <div class="dbox">
+          <h3>Activity Based Profit x Stay Days (${windowSize}d)</h3>
+          <canvas id="chart-profit-scatter" width="420" height="260"></canvas>
+        </div>
+        <div class="dbox">
+          <h3>Avg Stay Days by Location (${windowSize}d)</h3>
+          <canvas id="chart-stay-radar" width="420" height="260"></canvas>
+        </div>
+      </div>
+    `;
+
+    /* ---------- 1.  データ抽出 ---------- */
+    const PSI  = psiLog        .filter(p => p.turn > 0).slice(-windowSize);
+    const CF   = doCostsByTurn .filter(d => d.turn > 0).slice(-windowSize);
+    const turns = PSI.map(p => p.turn);
+
+    /* ---------- 2.  汎用チャート生成ヘルパ ---------- */
+    const CHART_CACHE = renderDashboard._cache ||= {};
+    const COLORS = {
+      sale:'#4ba3ff', short:'#ff7cae', store:'#ffb44c', wh:'#ffd84c',
+      ncf:'#84b6f4',  abp  :'#ff99bb',
+      pie:['#4ba3ff','#ff7cae','#ffb44c','#ffd84c','#9ad7f5','#c8c8c8','#b5e7a0','#ff99bb']
+    };
+
+    /** 中央テキスト付きドーナツ用プラグイン (複数回登録を避ける) */
+    if (!Chart.registry.plugins.get('centerText')) {
+      Chart.register({
+        id:'centerText',
+        afterDraw(c,_,opt){
+          if(!opt.text) return;
+          const {ctx,chartArea:{left,right,top,bottom}} = c;
+          const [l1,l2] = opt.text.split('\n');
+          ctx.save();
+          ctx.font='bold 25px sans-serif';
+          ctx.fillStyle='#333'; ctx.textAlign='center'; ctx.textBaseline='middle';
+          const cx=(left+right)/2, cy=(top+bottom)/2;
+          ctx.fillText(l1,cx,cy-15); ctx.fillText(l2,cx,cy+15); ctx.restore();
+        }
+      });
+    }
+
+    function upsertChart(key, cfgWithCtx) {
+      if (CHART_CACHE[key]) CHART_CACHE[key].destroy();
+      const { ctx, ...chartCfg } = cfgWithCtx;
+      CHART_CACHE[key] = new Chart(ctx, chartCfg);
+    }
+
+    /* ---------- 3-A. 売上／在庫折れ線 ---------- */
+    const sales    = CF .map(d=>d.sold     ??0);
+    const shortage = PSI.map(p=>p.shortage ??0);
+    const storeInv = PSI.map(p=>(p.store.after ??0)+(p.wsInTransit??0));
+    const whInv    = PSI.map(p=>p.warehouse.after??0);
+
+    upsertChart('qty',{
+      type:'line',
+      data:{
+        labels:turns,
+        datasets:[
+          {label:'Sales',    data:sales,    borderColor:COLORS.sale,  borderWidth:2, tension:.3, fill:false},
+          {label:'Shortage',   data:shortage, borderColor:COLORS.short, borderWidth:2, tension:.3, fill:false},
+          {label:'Store+InTr',data:storeInv,borderColor:COLORS.store, borderWidth:2, tension:.3, fill:false},
+          {label:'Whs',      data:whInv,    borderColor:COLORS.wh,    borderWidth:2, tension:.3, fill:false}
+        ]},
+      options:{responsive:false,animation:false,plugins:{legend:{position:'top'}},scales:{y:{beginAtZero:true}}},
+      ctx:document.getElementById('chart-qty').getContext('2d')
+    });
+
+    /* ---------- 3-B. NCF／ABP 棒グラフ ---------- */
+    const revenue = CF.map(d=>d.revenue);
+    const costSum = CF.map(d =>
+      Object.entries(d.actualCost||{})
+        .filter(([k])=>k!=="Shortage")
+        .reduce((a,[,b])=>a+b,0)
+    );
+
+    const ncf     = revenue.map((r,i)=>r-costSum[i]);
+    const abp     = CF.map(d=>{
+        const sold= soldProducts.filter(p=>p.turn===d.turn);
+        return sold.reduce((s,p)=>s+(config.basePrice-p.total()),0);
+    });
+
+    upsertChart('cf',{
+      type:'bar',
+      data:{
+        labels:turns,
+        datasets:[
+          {label:'NCF', data:ncf, backgroundColor:COLORS.ncf},
+          {label:'ABP', data:abp, backgroundColor:COLORS.abp}
+        ]},
+      options:{responsive:false,animation:false,plugins:{legend:{position:'top'}},scales:{y:{beginAtZero:true}}},
+      ctx:document.getElementById('chart-cf').getContext('2d')
+    });
+
+    /* ---------- 3-C. 活動コスト比率ドーナツ ---------- */
+    const soldWin = soldProducts.filter(p => turns.includes(p.turn));
+    const costAgg = {};
+    soldWin.forEach(p =>
+      p.costs.forEach(c => costAgg[c.label] = (costAgg[c.label] || 0) + c.amount));
+    const classify = k =>
+      /Raw/.test(k)            ? 'Raw'        :
+      /Manuf|Factory/.test(k)  ? 'Factory'    :
+      /F2W|W2S/.test(k)        ? 'Transport'  :
+      /Warehouse/.test(k)      ? 'Warehouse'  :
+                                 'Store';
+    const classAgg = {};
+    Object.entries(costAgg).forEach(([k, v]) =>
+      classAgg[classify(k)] = (classAgg[classify(k)] || 0) + v);
+    const costLbls = ['Raw', 'Factory', 'Transport', 'Warehouse', 'Store']
+                      .filter(l => classAgg[l] !== undefined);
+    const totRev = soldWin.length * config.basePrice || 1;
+    const costValsPct = costLbls.map(l => ((classAgg[l] ?? 0) / totRev) * 100);
+    const totalPct = costValsPct
+                       .filter(Number.isFinite)
+                       .reduce((a, b) => a + b, 0)
+                       .toFixed(1);
+    upsertChart('costPie', {
+      type: 'doughnut',
+      data: {
+        labels: costLbls,
+        datasets: [{
+          data: costValsPct,
+          backgroundColor: COLORS.pie
+        }]
+      },
+      options: {
+        responsive: false,
+        animation: false,
+        cutout: '65%',
+        plugins: {
+          legend: { position: 'bottom' },
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.label}: ${ctx.parsed.toFixed(1)} %`
+            }
+          },
+          centerText: { text: `${totalPct}\n%` } 
+        }
+      },
+      ctx: document.getElementById('chart-cost-pie').getContext('2d')
+    });
+
+    /* ---------- 3-D. 在庫日数ドーナツ ---------- */
+    const mp=config.flow.Manuf.matPerPrd||1, pp=config.flow.Manuf.prdPerMat||1;
+    const avg = a=>a.reduce((x,y)=>x+y,0)/Math.max(a.length,1);
+    const div = CF.map(d=>d.sold).filter(Boolean).reduce((a,b)=>a+b,0)/(CF.filter(d=>d.sold>0).length||1)||1;
+
+    function asProd(raw){return raw*pp/mp;}
+    const valsDays = [
+      avg(PSI.map(p=>asProd(p.rawInTransit||0)))/div,
+      avg(PSI.map(p=>asProd(p.raw.after   ||0)))/div,
+      avg(PSI.map(p=>p.facInTransit ||0))/div,
+      avg(PSI.map(p=>p.factory.after||0))/div,
+      avg(PSI.map(p=>p.fwInTransit  ||0))/div,
+      avg(PSI.map(p=>p.warehouse.after||0))/div,
+      avg(PSI.map(p=>p.wsInTransit  ||0))/div,
+      avg(PSI.map(p=>p.store.after  ||0))/div
+    ];
+    const stockLbls=["Raw InT","Raw","Fct InP","Fct","F2W","Whs","W2S","Store"];
+    const stockCenter = `${valsDays.reduce((a,b)=>a+b,0).toFixed(1)}\nDays`;
+
+    upsertChart('stockPie',{
+      type:'doughnut',
+      data:{labels:stockLbls,datasets:[{data:valsDays,backgroundColor:COLORS.pie}]},
+      options:{responsive:false,animation:false,cutout:'70%',
+      plugins:{
+          legend:{position:'bottom'},
+          centerText:{text:stockCenter},
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.label}: ${ctx.parsed.toFixed(1)} Days`
+            }
+          }
+        }
+      },
+      ctx:document.getElementById('chart-stock-pie').getContext('2d')
+    });
+
+    /* ---------- 3-E. Profit × Stay 散布図 ---------- */
+    const scatter = soldWin.map(p=>({
+      x:(p.rawDays||0)+(p.factoryDays||0)+(p.warehouseDays||0)+(p.storeDays||0),
+      y:config.basePrice-p.total(),
+      id:p.id
+    }));
+    upsertChart('profitScatter',{
+      type:'scatter',
+      data:{datasets:[{label:'Profit x Stay',data:scatter,pointRadius:5,backgroundColor:COLORS.sale}]},
+      options:{
+        responsive:false,animation:false,plugins:{legend:{display:false},
+          tooltip:{callbacks:{label:c=>{
+            const d=c.raw; return `ID:${d.id} Profit:${d.y.toFixed(1)} Stay:${d.x}`;
+          }}}},
+        scales:{x:{title:{display:true,text:'Stay Days'},beginAtZero:true},
+                y:{title:{display:true,text:'Profit'},beginAtZero:true}}
+      },
+      ctx:document.getElementById('chart-profit-scatter').getContext('2d')
+    });
+
+    /* ---------- 3-F. 滞留日数レーダー ---------- */
+    const stayKeys=['rawDays','factoryDays','warehouseDays','storeDays'];
+    const stayVals=stayKeys.map(k=>avg(soldWin.map(p=>p[k]||0)));
+    upsertChart('stayRadar',{
+      type:'radar',
+      data:{labels:['Raw','Fac','WH','Store'],datasets:[{label:`Avg Stay Days(${windowSize}d)`,data:stayVals,fill:true,pointRadius:5,backgroundColor:'rgba(76,191,255,.2)',borderColor:'#4ba3ff'}]},
+      options:{responsive:false,animation:false,plugins:{legend:{display:false}},
+               scales:{r:{beginAtZero:true,suggestedMax:Math.max(2,...stayVals)}}},
+      ctx:document.getElementById('chart-stay-radar').getContext('2d')
+    });
+  }
+  // 外部からもwindowSize指定で呼べるようエイリアス
+  window.renderDashboard = renderDashboard;
+
+  /* ===== 8) orchestrator ====================================================================== */
+  function updateTables(){
+    document.getElementById('flow-ctrl-area').innerHTML = buildFlowControl();
+    attachFlowModeHandlers();
+    renderSummary();
+    renderProducts();
+    renderPSI();
+    renderCashflow();
+    attachFlowModeHandlers();
+    renderDashboard();
+  }
+  window.updateTables = updateTables;
+})();
+updateTables();
+
+/* ========================================================================================================
+    10. アニメーション
+======================================================================================================== */
+function createCustomer(){
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({color:0xffffff});
+  const head  = new THREE.Mesh(new THREE.SphereGeometry(0.21,16,16), mat);
+  head.position.set(0,2.5,0); g.add(head);
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6,1,0.3), mat);
+  torso.position.set(0,1.75,0); g.add(torso);
+
+  const armGeo = new THREE.CylinderGeometry(0.1,0.1,0.7,16);
+  armGeo.translate(0,-0.35,0);
+  const legGeo = new THREE.BoxGeometry(0.25,1,0.25);
+  legGeo.translate(0,-0.5,0);
+
+  [[-0.35,2],[0.35,2]].forEach(([x,y])=>{
+    const arm = new THREE.Mesh(armGeo,mat);
+    arm.position.set(x,y,0); g.add(arm);
+  });
+  [[-0.15,1],[0.15,1]].forEach(([x,y])=>{
+    const leg = new THREE.Mesh(legGeo,mat);
+    leg.position.set(x,y,0); g.add(leg);
+  });
+  g.scale.set(4,4,4);
+  return g;
+}
+
+class PSIAnimator {
+  /* ========== 1. 初期化 ========== */
+  constructor(canvasId = 'psiCanvas') {
+    /*** THREE.js 基本 ***/
+    const cvs     = document.getElementById(canvasId);
+    this.w        = cvs.clientWidth  || 640;
+    this.h        = cvs.clientHeight || 400;
+    this.renderer = new THREE.WebGLRenderer({canvas: cvs, antialias: true});
+    this.renderer.setSize(this.w, this.h);
+
+    this.scene    = new THREE.Scene();
+    this.scene.background = new THREE.Color(0xf8f8f8);
+    this.renderer.setClearColor(0xf8f8f8, 1);
+
+    this.camera   = new THREE.PerspectiveCamera(45, this.w / this.h, 1, 500);
+    this.camera.position.set(0, 60, 125);
+    this.camera.lookAt(0, 0, 0);
+
+    /*** 共通ジオメトリ / マテリアル ***/
+    const s     = 10 / 5;
+    this.geo    = {
+      cube  : new THREE.BoxGeometry(s, s, s),
+      sphere: new THREE.SphereGeometry(s * 0.9, 8, 8),
+      cone  : new THREE.ConeGeometry(s * 0.9, s * 0.9, 3),
+    };
+    const c = 0x3399cc, r = 0xff3333, f = 0xd0e9ff;
+    this.mat   = {
+      stock : new THREE.MeshLambertMaterial({color: c}),
+      stockO: new THREE.MeshLambertMaterial({color: r}),
+      flow  : new THREE.MeshLambertMaterial({color: f}),
+      flowO : new THREE.MeshLambertMaterial({color: r}),
+      cap   : new THREE.MeshBasicMaterial({color: 0x999999, transparent: true, opacity: .2}),
+      arrow : new THREE.MeshBasicMaterial({color: 0x999999}),
+      push  : new THREE.MeshBasicMaterial({color: r}),
+      edge  : new THREE.LineBasicMaterial({color: 0x333333, linewidth: 2})
+    };
+
+    /* シーンの“静的”要素は一度だけ生成 */
+    this.staticGroup = new THREE.Group();
+    this.scene.add(this.staticGroup);
+    this._buildStaticLayout();
+
+    /* “動的”メッシュ保持用 */
+    this.dynamicGroup = new THREE.Group();
+    this.scene.add(this.dynamicGroup);
+
+    /* 点滅制御 */
+    this.currentRem = [0, 0, 0, 0];
+    this.lastBlink  = 0;                
+    this.blinkIntv  = 500; // ms
+
+    /* ライト */
+    this.scene.add(new THREE.AmbientLight(0xffffff, 1));
+    const dir = new THREE.DirectionalLight(0xffffff, 1);
+    dir.position.set(0, 50, 50); this.scene.add(dir);
+
+    /* render ループ開始 */
+    this.needRebuild = true;
+    requestAnimationFrame(this._loop.bind(this));
+  }
+
+  /* ========== 2. パブリック API ========== */
+  markDirty() { this.needRebuild = true; this.lastBlink = -Infinity;}
+
+  /* ========== 3. メインループ ========== */
+  _loop(t) {
+    if (this.needRebuild)     this._rebuildDynamicMeshes();
+    if (t - this.lastBlink > this.blinkIntv) {
+      this._cycleBlinkStep();
+      this._rebuildDynamicMeshes();
+      this.lastBlink = t;
+    }
+    this.renderer.render(this.scene, this.camera);
+    requestAnimationFrame(this._loop.bind(this));
+  }
+
+  /* ========== 4. シーン静的レイアウト ========== */
+  _buildStaticLayout() {
+    // 定数計算
+    const s  = this.geo.cube.parameters.width;
+    const sp = s * 1.1;
+    const pg = this.pg = 50;
+    const ox = -pg * 1.5;
+    this.pos = [
+      ox,
+      ox + pg,
+      ox + pg * 2,
+      ox + pg * 3,
+      ox + pg * 4,
+    ];
+    this.flowZ = -sp * 7;
+    const half = pg / 2;
+
+    // キャパシティ枠（Stock）
+    ['Raw', 'Factory', 'Warehouse', 'Store'].forEach((k, i) => {
+      const cap = config.stock[k].cap, layers = Math.ceil(cap / 25);
+      if (!layers) return;
+      const h = layers * s;
+      const box = new THREE.Mesh(
+        new THREE.BoxGeometry(sp * 4 + s, h, sp * 4 + s), this.mat.cap);
+      box.position.set(this.pos[i], h / 2, 0);
+      this.staticGroup.add(box);
+    });
+
+    // キャパシティ枠（Flow）
+    ['RawPrc', 'Manuf', 'F2W', 'W2S'].forEach((k, idx) => {
+      const cap = config.flow[k].cap, layers = Math.ceil(cap / 25);
+      if (!layers) return;
+      const h = layers * s;
+      const x = [
+        this.pos[0] - half,
+        (this.pos[0] + this.pos[1]) / 2,
+        (this.pos[1] + this.pos[2]) / 2,
+        (this.pos[2] + this.pos[3]) / 2,
+      ][idx];
+      const box = new THREE.Mesh(
+        new THREE.BoxGeometry(sp * 4 + s, h, sp * 4 + s), this.mat.cap);
+      box.position.set(x, h / 2, this.flowZ);
+      this.staticGroup.add(box);
+    });
+
+    // 帯矢印（Pushは赤）
+    const mkArrow = (x0, x1, mat) => {
+      const len = x1 - x0; if (len <= 0) return;
+      const band = new THREE.Mesh(
+        new THREE.BoxGeometry(len, s * .5, s * .5), mat);
+      band.position.set((x0 + x1) / 2, s * .1, 0);
+      this.staticGroup.add(band);
+      const cone = new THREE.Mesh(this.geo.cone, mat);
+      cone.rotation.z = -Math.PI / 2;
+      cone.position.set(x1 + s * .45, s * .1, 0);
+      this.staticGroup.add(cone);
+    };
+    const arrowMat = [
+      config.push.rawToManuf       ? this.mat.push : this.mat.arrow,
+      config.push.factoryToWh     ? this.mat.push : this.mat.arrow,
+      config.push.warehouseToStore? this.mat.push : this.mat.arrow,
+      this.mat.arrow,
+    ];
+    for (let i = 0; i < 4; i++) {
+      mkArrow(
+        this.pos[i] + sp * 5,
+        this.pos[i + 1] - sp * 5,
+        arrowMat[i]
+      );
+    }
+    mkArrow(
+      this.pos[0] - sp - (pg - 5 * sp),
+      this.pos[0] - sp * 6,
+      this.mat.arrow
+    );
+
+    // 工場建屋枠
+    {
+      const idx0 = 0, idx1 = 1; // Raw, Factory
+      const xMin = this.pos[idx0] - 3.5 * sp;
+      const xMax = this.pos[idx1] + 3.5 * sp;
+      const yMax = (Math.max(
+        Math.ceil(config.stock.Raw.cap / 25),
+        Math.ceil(config.flow.Manuf.cap / 25),
+        Math.ceil(config.stock.Factory.cap / 25)
+      ) * s) + s * 2;
+      const zMin = this.flowZ-sp * 5, zMax = sp * 5;
+      const width = xMax - xMin, height = yMax, depth = zMax - zMin;
+      const areaGeom = new THREE.BoxGeometry(width, height, depth);
+      const edges = new THREE.EdgesGeometry(areaGeom);
+      const lineMat = new THREE.LineBasicMaterial({ color: 0xdddddd });
+      const edgeLines = new THREE.LineSegments(edges, lineMat);
+      edgeLines.position.set((xMin + xMax) / 2, height / 2, (zMin + zMax) / 2);
+      this.staticGroup.add(edgeLines);
+    }
+
+    // 店舗屋根
+    {
+      const i = 3;
+      const capQty    = config.stock.Store?.cap || 0;
+      const capLayers = Math.ceil(capQty / 25);
+      if (capLayers > 0) {
+        const capHeight = capLayers * s;
+        const w = sp * 4 + s, d = sp * 4 + s;
+        const verts = new Float32Array([
+          -w / 1.5, 0, -d / 1.5,
+           w / 1.5, 0, -d / 1.5,
+           w / 1.5, 0,  d / 1.5,
+          -w / 1.5, 0,  d / 1.5,
+           0,    s * 3, 0
+        ]);
+        const roofGeo = new THREE.BufferGeometry();
+        roofGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+        roofGeo.setIndex([
+          0, 1, 2, 0, 2, 3,
+          0, 1, 4, 1, 2, 4,
+          2, 3, 4, 3, 0, 4
+        ]);
+        roofGeo.computeVertexNormals();
+        const roofMat = new THREE.MeshBasicMaterial({
+          color:      0xbbbbbb,
+          transparent:true,
+          opacity:    0.3,
+          side:       THREE.DoubleSide
+        });
+        const roof = new THREE.Mesh(roofGeo, roofMat);
+        roof.position.set(this.pos[i], capHeight, 0);
+        this.staticGroup.add(roof);
+      }
+    }
+  }
+
+  /* ========== 5. Blink 用 step 更新 ========== */
+  _cycleBlinkStep() {
+    /* rem のユニーク昇順を保持して step を進める */
+    const keys = ['RawPrc', 'Manuf', 'F2W', 'W2S'];
+    keys.forEach((k, idx) => {
+      const steps = [...new Set(flows[k].queue.filter(q=>q.rem>0).map(q=>q.rem))].sort((a,b)=>a-b);
+      if (steps.length <= 1) { this.currentRem[idx] = steps[0] || 0; return; }
+      const now = this.currentRem[idx];
+      const i   = steps.indexOf(now);
+      this.currentRem[idx] = steps[(i + 1) % steps.length];
+    });
+  }
+
+  /* ========== 6. Dynamic メッシュ再生成 ========== */
+  _rebuildDynamicMeshes() {
+    this.needRebuild = false;
+    this.dynamicGroup.clear();
+    const pg = this.pg;
+    const s     = this.geo.cube.parameters.width;
+    const sp    = s * 1.1;
+    const capOv = (i, cap) => i >= cap ? 'O' : '';
+
+    /* --- 6-1. Stock 在庫 --- */
+    const stocks = [
+      {key:'Raw',       qty: psiLog.at(-1).raw.after,       geo:'sphere'},
+      {key:'Factory',   qty: psiLog.at(-1).factory.after,   geo:'cube'},
+      {key:'Warehouse', qty: psiLog.at(-1).warehouse.after, geo:'cube'},
+      {key:'Store',     qty: psiLog.at(-1).store.after,     geo:'cube'},
+    ];
+    stocks.forEach((st,i)=>{
+      const cap = config.stock[st.key].cap;
+      for(let n=0;n<st.qty;n++){
+        const layer = Math.floor(n/25), idx = n%25;
+        const x = this.pos[i] + (idx%5-2)*sp;
+        const y = s/2 + layer*s;
+        const z = (Math.floor(idx/5)-2)*sp;
+        const mat = this.mat['stock'+capOv(n,cap)];
+        const mesh = new THREE.Mesh(this.geo[st.geo], mat);
+        mesh.position.set(x,y,z); this.dynamicGroup.add(mesh);
+      }
+    });
+
+    /* --- 6-2. Flow キュー（Blink step 反映） --- */
+    const flowCfg = [
+      {k:'RawPrc', x:this.pos[0]-this.pg/2,         geo:'sphere', idx:0},
+      {k:'Manuf',   x:(this.pos[0]+this.pos[1])/2,   geo:'cube',   idx:1},
+      {k:'F2W',   x:(this.pos[1]+this.pos[2])/2,   geo:'cube',   idx:2},
+      {k:'W2S',   x:(this.pos[2]+this.pos[3])/2,   geo:'cube',   idx:3},
+    ];
+    flowCfg.forEach(f=>{
+      const cap  = config.flow[f.k].cap;
+      const show = this.currentRem[f.idx];
+      const q    = flows[f.k].queue.filter(q=>q.rem===show);
+      q.forEach((_,n)=>{
+        const layer = Math.floor(n/25), idx = n%25;
+        const x = f.x + (idx%5-2)*sp;
+        const y = s/2 + layer*s;
+        const z = (Math.floor(idx/5)-2)*sp + this.flowZ;
+        const mat = this.mat['flow'+capOv(n,cap)];
+        const mesh = new THREE.Mesh(this.geo[f.geo], mat);
+        mesh.position.set(x,y,z); this.dynamicGroup.add(mesh);
+      });
+    });
+
+    /* --- 6-3. Sales (Store2Customer) --- */
+    const outflow = psiLog.at(-1).store.outflow;
+    if (outflow) {
+      for(let n=0;n<outflow;n++){
+        const layer=Math.floor(n/25), idx=n%25;
+        const x = this.pos[3] + pg/2 + (idx%5-2)*sp;
+        const y = s/2 + layer*s;
+        const z = (Math.floor(idx/5)-2)*sp - this.flowZ;
+        const mesh = new THREE.Mesh(this.geo.cube, this.mat.flow);
+        mesh.position.set(x,y,z); this.dynamicGroup.add(mesh);
+      }
+    }
+
+    /* --- 6-4. Customer オブジェクト --- */
+    const cust = createCustomer();
+    if (psiLog.at(-1).shortage) {
+      cust.traverse(o=>o.material?.color?.set(0xff0000));
+    }
+    cust.rotation.y = Math.PI/2;
+    cust.position.set(this.pos[4]-sp*4+sp, 0, 0);
+    this.dynamicGroup.add(cust);
+  }
+
+    /* ========== 7. 静的レイアウトの再構築 ========== */
+    rebuildStaticLayout() {
+    while (this.staticGroup.children.length > 0) {
+      this.staticGroup.remove(this.staticGroup.children[0]);
+    }
+    this._buildStaticLayout();
+  }
+}
+
+/* -------------- インスタンス生成と既存フック置換 ------------ */
+const animator = new PSIAnimator();
+function renderPSIAnimation(){ animator.markDirty(); }
+
+/* Day進行 */
+const _origRunTurn   = runTurn;
+window.runTurn = function(){ _origRunTurn(); animator.markDirty(); };
+
+const _origResetSim  = resetSimulation;
+window.resetSimulation = function(){ _origResetSim(); animator.rebuildStaticLayout(); animator.markDirty();};
+
+/* タブ切替（animation タブ）時の再描画 */
+document.querySelectorAll('.tab-btn').forEach(b=>{
+  if (b.dataset.tab!=='animation') return;
+  b.addEventListener('click',()=>animator.markDirty());
+});
+
+</script>
+
 </body>
 </html>
