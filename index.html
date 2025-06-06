@@ -122,7 +122,7 @@
 <h1 style="text-align: center;">
   Simple Supply Chain Simulator
 </h1>
-<div class="cfg-box" id="cfg-box">
+<div class="cfg-box" id="cfg-box" style="display:none;">
   <h3>Configration Editor (JSON)</h3>
   <textarea id="config-editor"></textarea><br>
 </div>
@@ -135,7 +135,7 @@
     <button id="btn-run">1 Day Progress</button>
   </div>
   <div>
-    <button id="btn-cfg-toggle">▲ Hide Config</button>
+    <button id="btn-cfg-toggle">▼ Display Config</button>
   </div>
 </div>
 <div id="flow-ctrl-area" style="margin: 10px 0;"></div>
@@ -185,9 +185,11 @@ document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"))
   });
 
 document.getElementById("config-editor").value=JSON.stringify(config,null,2);
-let cfgBoxOpen = true;
+let cfgBoxOpen = false;
 const cfgBox   = document.getElementById('cfg-box');
 const btnCfgToggle = document.getElementById('btn-cfg-toggle');
+btnCfgToggle.textContent = '▼ Display Config';
+cfgBox.style.display = "none"; 
 btnCfgToggle.onclick = function() {
   cfgBoxOpen = !cfgBoxOpen;
   cfgBox.style.display = cfgBoxOpen ? '' : 'none';
