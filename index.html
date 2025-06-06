@@ -149,7 +149,7 @@
 </div>
 <div id="animation" class="tab active">
   <div id="sc-flow-caption" style="text-align:center;font-weight:bold;font-size:1.15em;margin-bottom:6px;">
-  <h3>Raw Material -&gt Factory Mfg -&gt Warehouse -&gt Store -&gt Customer</h3>
+  <h3>Raw Material ---&gt Factory Mfg ---&gt Warehouse ---&gt Store ---&gt Customer</h3>
   </div>
   <canvas id="psiCanvas" style="width:100%;height:400px;"></canvas>
 </div>
@@ -215,10 +215,10 @@ const config = {
     fillTarget : 0.95       //  βサービス率 (= Fill-rate)
   },
   flow: {
-    RawPrc:   { cap: 100, speed: 5, lot: 100, allowOver: true, orderInterval: 5 },
-    Manuf:    { cap:  90, speed: 3, matPerPrd: 1, prdPerMat: 2, lot: 30, allowOver: true, orderInterval: 3 },
-    F2W:      { cap:  80, speed: 2, allowOver: true, orderInterval: 2 },
-    W2S:      { cap:  60, speed: 1, allowOver: false, orderInterval: 1 }
+    RawPrc:   { cap: 100, leadTime: 5, lot: 100, allowOver: true, orderInterval: 5 },
+    Manufg:    { cap:  90, leadTime: 3, matPerPrd: 1, prdPerMat: 2, lot: 30, allowOver: true, orderInterval: 3 },
+    F2W:      { cap:  80, leadTime: 2, allowOver: true, orderInterval: 2 },
+    W2S:      { cap:  60, leadTime: 1, allowOver: false, orderInterval: 1 }
   },
   stock: {
     Raw:       { cap: 100, initial: 100, allowOver: true },
@@ -227,7 +227,7 @@ const config = {
     Store:     { cap:  60, initial:  60, allowOver: true }
   },
   push: {
-    rawToManuf: false,
+    rawToManufg: false,
     factoryToWh: false,
     warehouseToStore: false
   },
@@ -235,8 +235,8 @@ const config = {
   shortageCost: 100,
   unitCosts: {
     "RawMat": 10,
-    "Manuf": 20,
-    "ManufEx": 30,
+    "Manufg": 20,
+    "ManufgEx": 30,
     "Trans:F2W": 6,
     "TransEx:F2W": 9,
     "Trans:W2S": 4,
@@ -250,7 +250,7 @@ const config = {
     "Hold:Store": 2,
     "HoldEx:Store": 4,
     "Fixed:RawPrc": 200,
-    "Fixed:Manuf": 500,
+    "Fixed:Manufg": 500,
     "Fixed:F2W": 400,
     "Fixed:W2S": 400,
     "Fixed:Raw": 100,
@@ -262,7 +262,7 @@ const config = {
 let flowInputMode = "auto";   // "auto" or "manual"
 let manualFlowRequest = {
   RawPrc: 0,
-  Manuf: 0,
+  Manufg: 0,
   F2W: 0,
   W2S: 0
 };
@@ -313,22 +313,22 @@ function invNorm(p) {
 }
 
 function getOrderInterval(key) {
-  const map = { Store: "W2S", Warehouse: "F2W", Factory: "Manuf", Raw: "RawPrc" };
+  const map = { Store: "W2S", Warehouse: "F2W", Factory: "Manufg", Raw: "RawPrc" };
   const id = config.flow[key] ? key : map[key] || "RawPrc";
   return config.flow[id]?.orderInterval ?? 1;
 }
 
 function physicalLT(stage) {
   switch (stage) {
-    case "Store"    : return flows.W2S.speed;
-    case "Warehouse": return flows.F2W.speed + flows.W2S.speed;
-    case "Factory"  : return flows.Manuf.speed
-                      + flows.F2W.speed
-                      + flows.W2S.speed;
-    case "Raw"      : return flows.RawPrc.speed
-                      + flows.Manuf.speed
-                      + flows.F2W.speed
-                      + flows.W2S.speed;
+    case "Store"    : return flows.W2S.leadTime;
+    case "Warehouse": return flows.F2W.leadTime + flows.W2S.leadTime;
+    case "Factory"  : return flows.Manufg.leadTime
+                      + flows.F2W.leadTime
+                      + flows.W2S.leadTime;
+    case "Raw"      : return flows.RawPrc.leadTime
+                      + flows.Manufg.leadTime
+                      + flows.F2W.leadTime
+                      + flows.W2S.leadTime;
     default         : return 0;
   }
 }
@@ -379,11 +379,11 @@ function calcEchelonStock(st) {
     case "Raw":
       return sp.Raw.count()
         + prodToRaw(sp.Factory.count() + sp.Warehouse.count() + sp.Store.count())
-        + prodToRaw(flows.Manuf.queue.length + flows.F2W.queue.length + flows.W2S.queue.length)
+        + prodToRaw(flows.Manufg.queue.length + flows.F2W.queue.length + flows.W2S.queue.length)
         + flows.RawPrc.queue.length;
     case "Factory":
       return sp.Factory.count() + sp.Warehouse.count() + sp.Store.count()
-        + flows.Manuf.queue.length + flows.F2W.queue.length + flows.W2S.queue.length;
+        + flows.Manufg.queue.length + flows.F2W.queue.length + flows.W2S.queue.length;
     case "Warehouse":
       return sp.Warehouse.count() + sp.Store.count()
         + flows.F2W.queue.length + flows.W2S.queue.length;
@@ -412,9 +412,9 @@ const cumOrderInterval = stage => {
     Store:      getOrderInterval("W2S"),
     Warehouse:  getOrderInterval("W2S") + getOrderInterval("F2W"),
     Factory:    getOrderInterval("W2S") + getOrderInterval("F2W")
-                 + getOrderInterval("Manuf"),
+                 + getOrderInterval("Manufg"),
     Raw:        getOrderInterval("W2S") + getOrderInterval("F2W")
-                 + getOrderInterval("Manuf")
+                 + getOrderInterval("Manufg")
   };
   return (map[stage] || 0);
 };
@@ -499,7 +499,7 @@ class FlowBase{
   }
   issue(qty,enqueueFn){
     if(this.timer>0){
-      if(qty>0 && this.id==="Manuf") this.timer = 0;
+      if(qty>0 && this.id==="Manufg") this.timer = 0;
       else { this.timer--; if(qty<=0) return 0; }
     }
     if(qty<=0||this.timer>0) return 0;
@@ -523,10 +523,10 @@ class RawPrc extends FlowBase {
       const m = new RawMat();
       addCost(m, this.v, "RawMat");
 
-      if (this.speed === 0) {     // ★即納
+      if (this.leadTime === 0) {
         this.dest.add(m);
       } else {
-        this.queue.push({ item: m, rem: this.speed });
+        this.queue.push({ item: m, rem: this.leadTime });
       }
       done++;
     }
@@ -534,13 +534,13 @@ class RawPrc extends FlowBase {
   }
 }
 
-/*──────────────────── 6. Manuf ────────────────────────*/
-class Manuf extends FlowBase {
+/*──────────────────── 6. Manufg ────────────────────────*/
+class Manufg extends FlowBase {
   constructor(dest, raw) {
-    super("Manuf", dest);
+    super("Manufg", dest);
     this.raw = raw;
-    this.v   = config.unitCosts.Manuf;
-    this.vEx = config.unitCosts.ManufEx;
+    this.v   = config.unitCosts.Manufg;
+    this.vEx = config.unitCosts.ManufgEx;
   }
 
   enqueue(qty) {
@@ -567,14 +567,14 @@ class Manuf extends FlowBase {
         p.materials.push(...mats.map(m => m.id));
         p.rawDays = mats.reduce((s, m) => s + (m.rawDays || 0), 0);
         per.forEach(c => p.costs.push({ ...c }));
-        addCost(p, this.v, "Manuf");
+        addCost(p, this.v, "Manufg");
         produced++;
 
-        /* speed==0: 直接 Factory 在庫へ ------------ */
-        if (this.speed === 0) {
+        /* leadTime==0: 直接 Factory 在庫へ ------------ */
+        if (this.leadTime === 0) {
           this.dest.add(p);
         } else {
-          this.queue.push({ item: p, rem: this.speed });
+          this.queue.push({ item: p, rem: this.leadTime });
         }
       }
     }
@@ -597,8 +597,8 @@ class Transport extends FlowBase{
 let sp, flows;
 
 function initInv() {
-  const mp = config.flow.Manuf.matPerPrd || 1;
-  const pp = config.flow.Manuf.prdPerMat || 1;
+  const mp = config.flow.Manufg.matPerPrd || 1;
+  const pp = config.flow.Manufg.prdPerMat || 1;
   const matCostPerProduct = (mp * config.unitCosts.RawMat) / pp;
 
   // Raw
@@ -616,7 +616,7 @@ function initInv() {
     const p = new Product();
     p.materials.push(m.id);
     addCost(p, matCostPerProduct, "RawMat");
-    addCost(p, config.unitCosts.ManufEx, "ManufEx");
+    addCost(p, config.unitCosts.ManufgEx, "ManufgEx");
     sp.Factory.add(p);
   }
 
@@ -627,7 +627,7 @@ function initInv() {
     const p = new Product();
     p.materials.push(m.id);
     addCost(p, matCostPerProduct, "RawMat");
-    addCost(p, config.unitCosts.ManufEx, "ManufEx");
+    addCost(p, config.unitCosts.ManufgEx, "ManufgEx");
     addCost(p, config.unitCosts["TransEx:F2W"], "TransEx:F2W");
     sp.Warehouse.add(p);
   }
@@ -639,7 +639,7 @@ function initInv() {
     const p = new Product();
     p.materials.push(m.id);
     addCost(p, matCostPerProduct, "RawMat");
-    addCost(p, config.unitCosts.ManufEx, "ManufEx");
+    addCost(p, config.unitCosts.ManufgEx, "ManufgEx");
     addCost(p, config.unitCosts["TransEx:F2W"], "TransEx:F2W");
     addCost(p, config.unitCosts["TransEx:W2S"], "TransEx:W2S");
     sp.Store.add(p);
@@ -655,7 +655,7 @@ function buildSimulation() {
   };
   flows = {
     RawPrc : new RawPrc (sp.Raw),
-    Manuf  : new Manuf  (sp.Factory,  sp.Raw),
+    Manufg  : new Manufg  (sp.Factory,  sp.Raw),
     F2W    : new Transport("F2W", sp.Factory,   sp.Warehouse),
     W2S    : new Transport("W2S", sp.Warehouse, sp.Store)
   };
@@ -679,8 +679,8 @@ function buildSimulation() {
     forecast: config.demand.mean
   });
   doCostsByTurn.length = 0;
-  const mp = config.flow.Manuf.matPerPrd || 1;
-  const pp = config.flow.Manuf.prdPerMat || 1;
+  const mp = config.flow.Manufg.matPerPrd || 1;
+  const pp = config.flow.Manufg.prdPerMat || 1;
   let invSell;
   const rawEqProduct = (config.stock.Raw.initial * pp) / mp;
   invSell =
@@ -719,7 +719,7 @@ function resetSimulation() {
     config.flow[k].matPerPrd = config.flow[k].matPerPrd ?? 1;
     config.flow[k].prdPerMat = config.flow[k].prdPerMat ?? 1;
     config.flow[k].cap       = config.flow[k].cap       ?? 1;
-    config.flow[k].speed     = config.flow[k].speed     ?? 1;
+    config.flow[k].leadTime     = config.flow[k].leadTime     ?? 1;
     config.flow[k].allowOver = config.flow[k].allowOver ?? true;
     config.flow[k].orderInterval = config.flow[k].orderInterval ?? 1;
   });
@@ -746,8 +746,8 @@ function shipItems(from, toFlow, dest, qty) {
 
   items.forEach((it, i) => {
 
-    /* ===== speed == 0 ⇒ キューに積まず即着 ===== */
-    if (toFlow.speed === 0) {
+    /* ===== leadTime == 0 ⇒ キューに積まず即着 ===== */
+    if (toFlow.leadTime === 0) {
       // 輸送コスト計上（Ex/通常の判定は「発送順」をそのまま使用）
       const over   = i >= toFlow.cap;
       const label  = over ? `TransEx:${toFlow.id}` : `Trans:${toFlow.id}`;
@@ -768,7 +768,7 @@ function shipItems(from, toFlow, dest, qty) {
     addCost(it, amount, label);
     if (turnCostAcc) turnCostAcc[label] = (turnCostAcc[label] || 0) + amount;
 
-    toFlow.queue.push({ item: it, rem: toFlow.speed });
+    toFlow.queue.push({ item: it, rem: toFlow.leadTime });
   });
 
   return items.length;
@@ -813,8 +813,8 @@ const demandGen = {
 ===================================================================================================== */
 
 /*──────────────────── A. 小さなヘルパ ────────────────────*/
-const matPerPrd = ()=>config.flow.Manuf.matPerPrd||1;
-const prdPerMat = ()=>config.flow.Manuf.prdPerMat||1;
+const matPerPrd = ()=>config.flow.Manufg.matPerPrd||1;
+const prdPerMat = ()=>config.flow.Manufg.prdPerMat||1;
 const clamp  =(v,hi)=>Math.max(0,Math.min(v,hi));
 const lotRound=(q,id)=>roundLot(q,id);
 
@@ -833,10 +833,10 @@ function addPush(plan){
   if(config.push.factoryToWh){
     plan.fwShip += lotRound(Math.max(0,sp.Factory.count()-sp.Factory.cap),"F2W");
   }
-  if(config.push.rawToManuf){
+  if(config.push.rawToManufg){
     const overR = Math.max(0, sp.Raw.count() - sp.Raw.cap);
     const prodNeed = overR * prdPerMat();
-    plan.makeQty  += ceilLot(prodNeed, "Manuf");
+    plan.mfgQty  += ceilLot(prodNeed, "Manufg");
   }
   return plan;
 }
@@ -849,19 +849,19 @@ function clipByConstraints(plan){
 
   // 材料由来上限
   const maxMat = Math.floor(sp.Raw.count()/matPerPrd())*prdPerMat();
-  plan.makeQty = Math.min(plan.makeQty, maxMat);
+  plan.mfgQty = Math.min(plan.mfgQty, maxMat);
 
   // allowOver==false のフロー上限
   [
     {id:"W2S", prop:"wsShip"},
     {id:"F2W", prop:"fwShip"},
-    {id:"Manuf",prop:"makeQty"},
+    {id:"Manufg",prop:"mfgQty"},
     {id:"RawPrc",prop:"rawOrder"}
   ].forEach(({id,prop})=>{
     const f = config.flow[id];
     if(!f.allowOver){
       const virtualCap = (id==="RawPrc")
-        ? f.cap + prodToRaw(plan.makeQty)
+        ? f.cap + prodToRaw(plan.mfgQty)
         : f.cap;
       plan[prop] = clamp(plan[prop], virtualCap - flows[id].queue.length);
     }
@@ -874,7 +874,7 @@ function clipByConstraints(plan){
 function decide(){
   let plan = {
     rawOrder : pullGap("Raw"      ,"RawPrc"),
-    makeQty  : pullGap("Factory"  ,"Manuf"),
+    mfgQty  : pullGap("Factory"  ,"Manufg"),
     fwShip   : pullGap("Warehouse","F2W"),
     wsShip   : pullGap("Store"    ,"W2S")
   };
@@ -886,7 +886,7 @@ function decide(){
 }
 
 function rawOrderNeededEchelon(plan){
-  const needNow = plan.makeQty * matPerPrd();
+  const needNow = plan.mfgQty * matPerPrd();
   const echelon = calcEchelonStock("Raw")
                   - needNow;
   const target  = targetBaseStock("Raw");
@@ -902,7 +902,7 @@ function manualPlan(){
 
   let plan={
     rawOrder : getVal("rawOrder","RawPrc"),
-    makeQty  : getVal("makeQty" ,"Manuf"),
+    mfgQty  : getVal("mfgQty" ,"Manufg"),
     fwShip   : getVal("fwShip"  ,"F2W"),
     wsShip   : getVal("wsShip"  ,"W2S")
   };
@@ -924,7 +924,7 @@ function runTurn() {
   /* --- 1) 到着処理（tick） --------------------------- */
   const arrivals = {
     R: flows.RawPrc.tick(),
-    F: flows.Manuf.tick(),
+    F: flows.Manufg.tick(),
     W: flows.F2W.tick(),
     S: flows.W2S.tick()
   };
@@ -934,22 +934,22 @@ function runTurn() {
 
   /* (Auto モード時は入力欄リセット) */
   if (flowInputMode === "auto") {
-    manualFlowRequest = { RawPrc: 0, Manuf: 0, F2W: 0, W2S: 0 };
-    ["inputRawPrc", "inputManuf", "inputF2W", "inputW2S"]
+    manualFlowRequest = { RawPrc: 0, Manufg: 0, F2W: 0, W2S: 0 };
+    ["inputRawPrc", "inputManufg", "inputF2W", "inputW2S"]
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = 0; });
   }
 
   /* --- 3) フローへ投入 ------------------------------- */
-  let rawOrdered = 0, makeStarted = 0, rawUsed = 0;
+  let rawOrdered = 0, mfgStarted = 0, rawUsed = 0;
 
   const wsShip = flows.W2S.issue(plan.wsShip,
     q => shipItems(sp.Warehouse, flows.W2S, sp.Store, q));
   const fwShip = flows.F2W.issue(plan.fwShip,
     q => shipItems(sp.Factory, flows.F2W, sp.Warehouse, q));
 
-  flows.Manuf.issue(plan.makeQty, q => {
-    const { produced, consumed } = flows.Manuf.enqueue(q);
-    makeStarted += produced; rawUsed += consumed;
+  flows.Manufg.issue(plan.mfgQty, q => {
+    const { produced, consumed } = flows.Manufg.enqueue(q);
+    mfgStarted += produced; rawUsed += consumed;
     return produced;
   });
 
@@ -959,10 +959,10 @@ function runTurn() {
   });
 
   /* --- 3.5) 即納分の補正 ----------------------------- */
-  const instantRaw = (flows.RawPrc.speed === 0) ? rawOrdered   : 0;
-  const instantFac = (flows.Manuf.speed  === 0) ? makeStarted : 0;
-  const instantFW  = (flows.F2W.speed    === 0) ? fwShip      : 0;
-  const instantWS  = (flows.W2S.speed    === 0) ? wsShip      : 0;
+  const instantRaw = (flows.RawPrc.leadTime === 0) ? rawOrdered   : 0;
+  const instantFac = (flows.Manufg.leadTime  === 0) ? mfgStarted : 0;
+  const instantFW  = (flows.F2W.leadTime    === 0) ? fwShip      : 0;
+  const instantWS  = (flows.W2S.leadTime    === 0) ? wsShip      : 0;
 
   /* --- 4) 需要生成 & 販売 ---------------------------- */
   const demand   = demandGen.gen();
@@ -977,11 +977,11 @@ function runTurn() {
   /* --- 6) PSI ログ ---------------------------------- */
   psiLog.push({
     turn,
-    rawOrdered, makeStarted,
-    rawInTransit: (flows.RawPrc.speed === 0) ? 0 : flows.RawPrc.queue.length,
-    facInTransit: (flows.Manuf.speed  === 0) ? 0 : flows.Manuf.queue.length,
-    fwInTransit : (flows.F2W.speed    === 0) ? 0 : flows.F2W.queue.length,
-    wsInTransit : (flows.W2S.speed    === 0) ? 0 : flows.W2S.queue.length,
+    rawOrdered, mfgStarted,
+    rawInTransit: (flows.RawPrc.leadTime === 0) ? 0 : flows.RawPrc.queue.length,
+    facInTransit: (flows.Manufg.leadTime  === 0) ? 0 : flows.Manufg.queue.length,
+    fwInTransit : (flows.F2W.leadTime    === 0) ? 0 : flows.F2W.queue.length,
+    wsInTransit : (flows.W2S.leadTime    === 0) ? 0 : flows.W2S.queue.length,
 
     raw       : { before: before.R,
                   produced: arrivals.R + instantRaw,
@@ -1019,7 +1019,7 @@ function runTurn() {
 /*──────────────────── H. コスト計算 ────────────────────*/
 function calcTurnCost(soldList,shortage){
   [sp.Raw,sp.Factory,sp.Warehouse,sp.Store].forEach(st=>st.holdTick());
-  [flows.RawPrc,flows.Manuf,flows.F2W,flows.W2S].forEach(fl=>fl.applyFixed());
+  [flows.RawPrc,flows.Manufg,flows.F2W,flows.W2S].forEach(fl=>fl.applyFixed());
   [sp.Raw,sp.Factory,sp.Warehouse,sp.Store].forEach(st=>st.applyFixed());
 
   if(shortage){
@@ -1030,7 +1030,7 @@ function calcTurnCost(soldList,shortage){
   const rawOrderInTransit = (flows.RawPrc.queue.length * prdPerMat()) / matPerPrd();
   const invSell = (
     sp.Store.count() + sp.Warehouse.count() + sp.Factory.count() +
-    flows.Manuf.queue.length + flows.F2W.queue.length + flows.W2S.queue.length +
+    flows.Manufg.queue.length + flows.F2W.queue.length + flows.W2S.queue.length +
     eqFinished + rawOrderInTransit
   ) * config.basePrice;
 
@@ -1071,10 +1071,10 @@ function checkPSIConsistency() {
 
   /* ------------------------------------------------------------
      2) フロー in-Transit 勘定
-        speed == 0 のフローは in-Transit が無いので対象外
+        leadTime == 0 のフローは in-Transit が無いので対象外
   ------------------------------------------------------------ */
-  const flows = ["RawPrc", "Manuf", "F2W", "W2S"]
-    .filter(f => (config.flow[f].speed || 0) > 0);
+  const flows = ["RawPrc", "Manufg", "F2W", "W2S"]
+    .filter(f => (config.flow[f].leadTime || 0) > 0);
 
   flows.forEach(f => {
 
@@ -1084,13 +1084,13 @@ function checkPSIConsistency() {
 
     const issued =
       f === "RawPrc" ? pNow.rawOrdered        :
-      f === "Manuf"  ? pNow.makeStarted       :
+      f === "Manufg"  ? pNow.mfgStarted       :
       f === "F2W"    ? pNow.factory.shipped   :
                        pNow.warehouse.outflow;         // W2S
 
     const key = (
       f === "RawPrc" ? "rawInTransit" :
-      f === "Manuf"  ? "facInTransit" :
+      f === "Manufg"  ? "facInTransit" :
       f === "F2W"    ? "fwInTransit"  :
                        "wsInTransit"
     );
@@ -1098,7 +1098,7 @@ function checkPSIConsistency() {
     const delta   = (pNow[key]  ?? 0) - (pPrev[key] ?? 0);
     const arrived =
       f === "RawPrc" ? pNow.raw.produced       :
-      f === "Manuf"  ? pNow.factory.produced   :
+      f === "Manufg"  ? pNow.factory.produced   :
       f === "F2W"    ? pNow.warehouse.inflow   :
                        pNow.store.inflow;              // W2S
 
@@ -1107,29 +1107,29 @@ function checkPSIConsistency() {
   });
 
   /* ------------------------------------------------------------
-     3) リードタイム後の到着チェック（speed ターン前投入＝今回到着）
-        こちらも speed==0 は除外
+     3) リードタイム後の到着チェック（leadTime ターン前投入＝今回到着）
+        こちらも leadTime==0 は除外
   ------------------------------------------------------------ */
 flows.forEach(f => {
-  const speed = config.flow[f].speed || 1;
-  if (psiLog.length <= speed) return;
+  const leadTime = config.flow[f].leadTime || 1;
+  if (psiLog.length <= leadTime) return;
 
-  const pPast = psiLog.at(-1 - speed);
+  const pPast = psiLog.at(-1 - leadTime);
   const arrived =
     f === "RawPrc" ? p.raw.produced       :
-    f === "Manuf"  ? p.factory.produced   :
+    f === "Manufg"  ? p.factory.produced   :
     f === "F2W"    ? p.warehouse.inflow   :
                      p.store.inflow;                   // W2S
 
   /* ---- Day0 には投入フィールドが無い → 0 扱いにする ---- */
   const issued =
     f === "RawPrc" ? (pPast.rawOrdered       || 0) :
-    f === "Manuf"  ? (pPast.makeStarted      || 0) :
+    f === "Manufg"  ? (pPast.mfgStarted      || 0) :
     f === "F2W"    ? (pPast.factory.shipped  || 0) :
                      (pPast.warehouse.outflow|| 0);    // W2S
 
   if (arrived !== issued)
-    e.push(`${f}: ${speed}ターン前投入 ${issued} ⇔ 今回到着 ${arrived} の不整合`);
+    e.push(`${f}: ${leadTime}ターン前投入 ${issued} ⇔ 今回到着 ${arrived} の不整合`);
 });
 
   /* ------------------------------------------------------------
@@ -1143,8 +1143,8 @@ flows.forEach(f => {
 }
 
 function calcTotalStock(p) {
-  const mp = config.flow.Manuf.matPerPrd || 1;
-  const pp = config.flow.Manuf.prdPerMat || 1;
+  const mp = config.flow.Manufg.matPerPrd || 1;
+  const pp = config.flow.Manufg.prdPerMat || 1;
   const rawAsProduct = ((p.rawInTransit ?? 0) + (p.raw?.after ?? 0)) * (pp / mp);
   const factory = (p.facInTransit ?? 0) + (p.factory?.after ?? 0);
   const fw = (p.fwInTransit ?? 0) + (p.warehouse?.after ?? 0);
@@ -1211,7 +1211,7 @@ function calcTotalStock(p) {
       rows.push(buildSummaryRow(""+d.turn, soldTurn, lbls, d.sold));
     });
 
-    const head = ["Day", "Sale Qty", ...lbls, ...stays, "Actv Bsd Cost", "Price", "Profit"];
+    const head = ["Day", "Sale Qty", ...lbls, ...stays, "ABC", "Price", "Profit"];
     document.getElementById("summary").innerHTML =
     "<h2>Activity Based Cost Log by Day, per Product</h2>" + buildTable(head, rows);
 
@@ -1247,7 +1247,7 @@ function calcTotalStock(p) {
   function renderProducts(){
     ScrollKeeper.save("products");
 
-    const head=["Day","Prd ID","Price","Actv Bsd Cost","Profit",
+    const head=["Day","Prd ID","Price","ABC","Profit",
                 "Stay<br>[R]","Stay<br>[F]","Stay<br>[W]","Stay<br>[S]",
                 "RawMat ID","Activity Based Cost Detail"];
     const rows = soldProducts.map(p=>{
@@ -1271,12 +1271,12 @@ function calcTotalStock(p) {
     ScrollKeeper.save("psi");
 
     const head=[
-      "Day","Raw Ord","Raw InTr","Raw Beg","Raw Recv","Raw Used","Raw End",
+      "Day","RM Ord","RM InTr","RM Beg","RM Recv","RM Used","RM End",
       "Mfg Start","Mfg InPr",
       "Fct Beg","Fct Recv","F2W Ship","Fct End",
       "F2W InTr","Whs Beg","F2W Recv","W2S Ship","Whs End",
       "W2S InTr","Str Beg","W2S Recv","Str Sale","Str End",
-      "Shrt","Dmd","Ttl Inv"
+      "Shrtg","Dmd","Ttl Inv"
     ];
     const decIdx = [1, 7, 11, 16];
     const thHtml = head.map((h, i) =>
@@ -1286,7 +1286,7 @@ function calcTotalStock(p) {
         p.turn,
         p.rawOrdered??0,p.rawInTransit,
         p.raw.before,p.raw.produced,p.raw.consumed,
-        p.raw.after,p.makeStarted??0,p.facInTransit,
+        p.raw.after,p.mfgStarted??0,p.facInTransit,
         p.factory.before,p.factory.produced,p.factory.shipped,
         p.factory.after,p.fwInTransit,p.warehouse.before,
         p.warehouse.inflow,p.warehouse.outflow,
@@ -1295,7 +1295,6 @@ function calcTotalStock(p) {
         p.shortage,p.demand,calcTotalStock(p)
       ];
       return "<tr>" + row.map((c, i) => {
-        // Shrt列のみピンク背景に
         if(i === 23 && c > 0) return `<td style="background:pink">${c}</td>`;
         return `<td${decIdx.includes(i) ? ' class="psi-decision-col-cell"' : ''}>${c}</td>`;
       }).join("") + "</tr>";
@@ -1310,7 +1309,7 @@ function calcTotalStock(p) {
   function buildFlowControl(){
     const flowLabels = {
       RawPrc: "RM",
-      Manuf: "Mfg",
+      Manufg: "Mfg",
       F2W: "F2W",
       W2S: "W2S"
     };
@@ -1318,7 +1317,7 @@ function calcTotalStock(p) {
      <div id="psi-manual-ctrl" style="margin-bottom:10px;text-align:center;">
        <label>Auto:<input type="radio" name="flowMode" value="auto" ${flowInputMode==="auto"?"checked":""}></label>
        <label>Manual:<input type="radio" name="flowMode" value="manual" ${flowInputMode==="manual"?"checked":""}></label>
-       ${["RawPrc","Manuf","F2W","W2S"].map(id=>
+       ${["RawPrc","Manufg","F2W","W2S"].map(id=>
           `<label>${flowLabels[id]}:
             <input type="number" id="input${id.replace("2","2")}" min="0"
                    value="${manualFlowRequest[id]||0}"
@@ -1390,19 +1389,19 @@ function calcTotalStock(p) {
       r.onchange=e=>{
         flowInputMode=e.target.value;
         const dis = flowInputMode==="auto";
-        ["RawPrc","Manuf","F2W","W2S"].forEach(id=>{
+        ["RawPrc","Manufg","F2W","W2S"].forEach(id=>{
           document.getElementById("input"+id.replace("2","2")).disabled = dis;
         });
         if(dis){
-          manualFlowRequest={RawPrc:0,Manuf:0,"F2W":0,"W2S":0};
-          ["RawPrc","Manuf","F2W","W2S"].forEach(id=>{
+          manualFlowRequest={RawPrc:0,Manufg:0,"F2W":0,"W2S":0};
+          ["RawPrc","Manufg","F2W","W2S"].forEach(id=>{
             document.getElementById("input"+id.replace("2","2")).value=0;
           });
         }
       };
     });
     document.getElementById("inputRawPrc").oninput = e=>manualFlowRequest.RawPrc = +e.target.value;
-    document.getElementById("inputManuf"  ).oninput = e=>manualFlowRequest.Manuf   = +e.target.value;
+    document.getElementById("inputManufg"  ).oninput = e=>manualFlowRequest.Manufg   = +e.target.value;
     document.getElementById("inputF2W"   ).oninput = e=>manualFlowRequest.F2W = +e.target.value;
     document.getElementById("inputW2S"   ).oninput = e=>manualFlowRequest.W2S = +e.target.value;
   }
@@ -1520,7 +1519,7 @@ function calcTotalStock(p) {
     const sales    = CF .map(d=>d.sold     ??0);
     const shortage = PSI.map(p=>p.shortage ??0);
     const storeInv = PSI.map(p=>(p.store.after ??0)+(p.wsInTransit??0));
-    const whInv    = PSI.map(p=>p.warehouse.after??0);
+    const whInv    = PSI.map(p=>(p.warehouse.after??0)+(p.fwInTransit??0));
 
     upsertChart('qty',{
       type:'line',
@@ -1529,8 +1528,8 @@ function calcTotalStock(p) {
         datasets:[
           {label:'Sales',    data:sales,    borderColor:COLORS.sale,  borderWidth:2, tension:.3, fill:false},
           {label:'Shortage',   data:shortage, borderColor:COLORS.short, borderWidth:2, tension:.3, fill:false},
-          {label:'Store+InTr',data:storeInv,borderColor:COLORS.store, borderWidth:2, tension:.3, fill:false},
-          {label:'Whs',      data:whInv,    borderColor:COLORS.wh,    borderWidth:2, tension:.3, fill:false}
+          {label:'Str+InTr',data:storeInv,borderColor:COLORS.store, borderWidth:2, tension:.3, fill:false},
+          {label:'Whs+InTr',      data:whInv,    borderColor:COLORS.wh,    borderWidth:2, tension:.3, fill:false}
         ]},
       options:{responsive:false,animation:false,plugins:{legend:{position:'top'}},scales:{y:{beginAtZero:true}}},
       ctx:document.getElementById('chart-qty').getContext('2d')
@@ -1568,15 +1567,15 @@ function calcTotalStock(p) {
     soldWin.forEach(p =>
       p.costs.forEach(c => costAgg[c.label] = (costAgg[c.label] || 0) + c.amount));
     const classify = k =>
-      /Raw/.test(k)            ? 'Raw'        :
-      /Manuf|Factory/.test(k)  ? 'Factory'    :
+      /Raw/.test(k)            ? 'Raw Material'        :
+      /Manufg|Factory/.test(k)  ? 'Factory'    :
       /F2W|W2S/.test(k)        ? 'Transport'  :
       /Warehouse/.test(k)      ? 'Warehouse'  :
                                  'Store';
     const classAgg = {};
     Object.entries(costAgg).forEach(([k, v]) =>
       classAgg[classify(k)] = (classAgg[classify(k)] || 0) + v);
-    const costLbls = ['Raw', 'Factory', 'Transport', 'Warehouse', 'Store']
+    const costLbls = ['Raw Material', 'Factory', 'Transport', 'Warehouse', 'Store']
                       .filter(l => classAgg[l] !== undefined);
     const totRev = soldWin.length * config.basePrice || 1;
     const costValsPct = costLbls.map(l => ((classAgg[l] ?? 0) / totRev) * 100);
@@ -1611,7 +1610,7 @@ function calcTotalStock(p) {
     });
 
     /* ---------- 3-D. 在庫日数ドーナツ ---------- */
-    const mp=config.flow.Manuf.matPerPrd||1, pp=config.flow.Manuf.prdPerMat||1;
+    const mp=config.flow.Manufg.matPerPrd||1, pp=config.flow.Manufg.prdPerMat||1;
     const avg = a=>a.reduce((x,y)=>x+y,0)/Math.max(a.length,1);
     const div = CF.map(d=>d.sold).filter(Boolean).reduce((a,b)=>a+b,0)/(CF.filter(d=>d.sold>0).length||1)||1;
 
@@ -1626,7 +1625,7 @@ function calcTotalStock(p) {
       avg(PSI.map(p=>p.wsInTransit  ||0))/div,
       avg(PSI.map(p=>p.store.after  ||0))/div
     ];
-    const stockLbls=["Raw InT","Raw","Fct InP","Fct","F2W","Whs","W2S","Store"];
+    const stockLbls=["RM InTr","RM","Fct InPr","Fct","F2W","Whs","W2S","Store"];
     const stockCenter = `${valsDays.reduce((a,b)=>a+b,0).toFixed(1)}\nDays`;
 
     upsertChart('stockPie',{
@@ -1671,7 +1670,7 @@ function calcTotalStock(p) {
     const stayVals=stayKeys.map(k=>avg(soldWin.map(p=>p[k]||0)));
     upsertChart('stayRadar',{
       type:'radar',
-      data:{labels:['Raw','Fac','WH','Store'],datasets:[{label:`Avg Stay Days(${windowSize}d)`,data:stayVals,fill:true,pointRadius:5,backgroundColor:'rgba(76,191,255,.2)',borderColor:'#4ba3ff'}]},
+      data:{labels:['Raw Material','Factory','Warehouse','Store'],datasets:[{label:`Avg Stay Days(${windowSize}d)`,data:stayVals,fill:true,pointRadius:5,backgroundColor:'rgba(76,191,255,.2)',borderColor:'#4ba3ff'}]},
       options:{responsive:false,animation:false,plugins:{legend:{display:false}},
                scales:{r:{beginAtZero:true,suggestedMax:Math.max(2,...stayVals)}}},
       ctx:document.getElementById('chart-stay-radar').getContext('2d')
@@ -1829,7 +1828,7 @@ class PSIAnimator {
     });
 
     // キャパシティ枠（Flow）
-    ['RawPrc', 'Manuf', 'F2W', 'W2S'].forEach((k, idx) => {
+    ['RawPrc', 'Manufg', 'F2W', 'W2S'].forEach((k, idx) => {
       const cap = config.flow[k].cap, layers = Math.ceil(cap / 25);
       if (!layers) return;
       const h = layers * s;
@@ -1858,7 +1857,7 @@ class PSIAnimator {
       this.staticGroup.add(cone);
     };
     const arrowMat = [
-      config.push.rawToManuf       ? this.mat.push : this.mat.arrow,
+      config.push.rawToManufg       ? this.mat.push : this.mat.arrow,
       config.push.factoryToWh     ? this.mat.push : this.mat.arrow,
       config.push.warehouseToStore? this.mat.push : this.mat.arrow,
       this.mat.arrow,
@@ -1883,7 +1882,7 @@ class PSIAnimator {
       const xMax = this.pos[idx1] + 3.5 * sp;
       const yMax = (Math.max(
         Math.ceil(config.stock.Raw.cap / 25),
-        Math.ceil(config.flow.Manuf.cap / 25),
+        Math.ceil(config.flow.Manufg.cap / 25),
         Math.ceil(config.stock.Factory.cap / 25)
       ) * s) + s * 2;
       const zMin = this.flowZ-sp * 5, zMax = sp * 5;
@@ -1935,7 +1934,7 @@ class PSIAnimator {
   /* ========== 5. Blink 用 step 更新 ========== */
   _cycleBlinkStep() {
     /* rem のユニーク昇順を保持して step を進める */
-    const keys = ['RawPrc', 'Manuf', 'F2W', 'W2S'];
+    const keys = ['RawPrc', 'Manufg', 'F2W', 'W2S'];
     keys.forEach((k, idx) => {
       const steps = [...new Set(flows[k].queue.filter(q=>q.rem>0).map(q=>q.rem))].sort((a,b)=>a-b);
       if (steps.length <= 1) { this.currentRem[idx] = steps[0] || 0; return; }
@@ -1977,7 +1976,7 @@ class PSIAnimator {
     /* --- 6-2. Flow キュー（Blink step 反映） --- */
     const flowCfg = [
       {k:'RawPrc', x:this.pos[0]-this.pg/2,         geo:'sphere', idx:0},
-      {k:'Manuf',   x:(this.pos[0]+this.pos[1])/2,   geo:'cube',   idx:1},
+      {k:'Manufg',   x:(this.pos[0]+this.pos[1])/2,   geo:'cube',   idx:1},
       {k:'F2W',   x:(this.pos[1]+this.pos[2])/2,   geo:'cube',   idx:2},
       {k:'W2S',   x:(this.pos[2]+this.pos[3])/2,   geo:'cube',   idx:3},
     ];
