@@ -208,8 +208,8 @@ const config = {
   demand: {
     random: false,
     pattern: 1,
-    mean: 30,
-    cv: 0.4
+    mean: 25,
+    cv: 0.5
   },
   service : {
     mode       : "fill",    //  "cycle" | "fill"
@@ -217,24 +217,23 @@ const config = {
     fillTarget : 0.95       //  βサービス率 (= Fill-rate)
   },
   flow: {
-    RawPrc:   { cap: 100, leadTime: 5, lot: 100, allowOver: true, orderInterval: 5 },
-    Manufg:    { cap:  90, leadTime: 3, matPerPrd: 1, prdPerMat: 2, lot: 30, allowOver: true, orderInterval: 3 },
-    F2W:      { cap:  80, leadTime: 2, allowOver: true, orderInterval: 2 },
-    W2S:      { cap:  60, leadTime: 1, allowOver: false, orderInterval: 1 }
+    RawPrc:    { cap: 100, leadTime: 5, orderInterval: 5, allowOver: true, lot: 50 },
+    Manufg:    { cap: 100, leadTime: 3, orderInterval: 3, allowOver: true, lot: 50, matPerPrd: 1, prdPerMat: 2 },
+    F2W:       { cap: 100, leadTime: 2, orderInterval: 2, allowOver: true  },
+    W2S:       { cap:  50, leadTime: 1, orderInterval: 1, allowOver: false }
   },
   stock: {
-    Raw:       { cap: 100, initial: 100, allowOver: true },
-    Factory:   { cap:  90, initial:  90, allowOver: true },
-    Warehouse: { cap:  80, initial:  80, allowOver: true },
-    Store:     { cap:  60, initial:  60, allowOver: true }
+    Raw:       { cap: 100, initial:  50, allowOver: true },
+    Factory:   { cap: 100, initial:  50, allowOver: true },
+    Warehouse: { cap: 150, initial: 100, allowOver: true },
+    Store:     { cap:  75, initial:  50, allowOver: true }
   },
   push: {
     rawToManufg: false,
     factoryToWh: false,
     warehouseToStore: false
   },
-  basePrice: 200,
-  shortageCost: 100,
+  sellPrice: 200,
   unitCosts: {
     "RawMat": 10,
     "Manufg": 20,
@@ -258,7 +257,8 @@ const config = {
     "Fixed:Raw": 100,
     "Fixed:Factory": 100,
     "Fixed:Warehouse": 150,
-    "Fixed:Store": 150
+    "Fixed:Store": 150,
+    "Shortage": 100
   }
 };
 let flowInputMode = "auto";   // "auto" or "manual"
@@ -689,7 +689,7 @@ function buildSimulation() {
     (config.stock.Store.initial +
      config.stock.Warehouse.initial +
      config.stock.Factory.initial +
-     rawEqProduct) * config.basePrice;
+     rawEqProduct) * config.sellPrice;
   doCostsByTurn.push({
     turn: 0,
     sold: 0,
@@ -1025,7 +1025,7 @@ function calcTurnCost(soldList,shortage){
   [sp.Raw,sp.Factory,sp.Warehouse,sp.Store].forEach(st=>st.applyFixed());
 
   if(shortage){
-    turnCostAcc.Shortage=(turnCostAcc.Shortage||0)+shortage*config.shortageCost;
+    turnCostAcc.Shortage=(turnCostAcc.Shortage||0)+shortage*config.unitCosts.Shortage;
   }
 
   const eqFinished = (sp.Raw.count() * prdPerMat()) / matPerPrd();
@@ -1034,12 +1034,12 @@ function calcTurnCost(soldList,shortage){
     sp.Store.count() + sp.Warehouse.count() + sp.Factory.count() +
     flows.Manufg.queue.length + flows.F2W.queue.length + flows.W2S.queue.length +
     eqFinished + rawOrderInTransit
-  ) * config.basePrice;
+  ) * config.sellPrice;
 
   doCostsByTurn.push({
     turn,
     sold: soldList.length,
-    revenue: soldList.length * config.basePrice,
+    revenue: soldList.length * config.sellPrice,
     actualCost: {...turnCostAcc},
     invSell
   });
@@ -1231,7 +1231,7 @@ function calcTotalStock(p) {
 
     const stay = s => perUnitDiv ? sum(soldArr.map(p => p[stayKey(s)] || 0)) / perUnitDiv : 0;
     const unitCost = sum(lbls.map(k => objCost[k]));
-    const revenue = config.basePrice;
+    const revenue = config.sellPrice;
   let profit = (label == "0" || label == 0) ? 0 : revenue - unitCost;
 
     return [
@@ -1256,7 +1256,7 @@ function calcTotalStock(p) {
       const cost = p.total();
       return [
         p.turn,p.id,
-        pad(config.basePrice,2),pad(cost,2),pad(config.basePrice-cost,2),
+        pad(config.sellPrice,2),pad(cost,2),pad(config.sellPrice-cost,2),
         p.rawDays||0,p.factoryDays||0,p.warehouseDays||0,p.storeDays||0,
         (p.materials||[]).join(", "),
         p.costs.map(c=>`${c.label}:${pad(c.amount,2)}`).join(", ")
@@ -1371,7 +1371,7 @@ function calcTotalStock(p) {
     const costTotal = sum(costs);
     const revenue = turnObj ? turnObj.revenue
       : isAvg ? sum(turns.map(t => t.revenue)) / Math.max(turns.length, 1)
-      : qty * config.basePrice;
+      : qty * config.sellPrice;
   const profit = revenue - costTotal;
   const invSell = turnObj ? turnObj.invSell
       : isAvg ? sum(turns.map(t => t.invSell)) / Math.max(turns.length, 1)
@@ -1424,7 +1424,7 @@ function calcTotalStock(p) {
       .filter(d => d.turn > 0)
       .reduce((a, d) => a + (d.revenue - Object.values(d.actualCost || {}).reduce((x, y) => x + y, 0)), 0);
     const abpSum = soldProducts
-      .reduce((a, p) => a + (config.basePrice - p.total()), 0);
+      .reduce((a, p) => a + (config.sellPrice - p.total()), 0);
     const currInvPrice = doCostsByTurn.length > 0 ? doCostsByTurn.at(-1).invSell : 0;
     const shortageSum = doCostsByTurn
       .filter(d => d.turn > 0)
@@ -1548,7 +1548,7 @@ function calcTotalStock(p) {
     const ncf     = revenue.map((r,i)=>r-costSum[i]);
     const abp     = CF.map(d=>{
         const sold= soldProducts.filter(p=>p.turn===d.turn);
-        return sold.reduce((s,p)=>s+(config.basePrice-p.total()),0);
+        return sold.reduce((s,p)=>s+(config.sellPrice-p.total()),0);
     });
 
     upsertChart('cf',{
@@ -1579,7 +1579,7 @@ function calcTotalStock(p) {
       classAgg[classify(k)] = (classAgg[classify(k)] || 0) + v);
     const costLbls = ['Raw Material', 'Factory', 'Transport', 'Warehouse', 'Store']
                       .filter(l => classAgg[l] !== undefined);
-    const totRev = soldWin.length * config.basePrice || 1;
+    const totRev = soldWin.length * config.sellPrice || 1;
     const costValsPct = costLbls.map(l => ((classAgg[l] ?? 0) / totRev) * 100);
     const totalPct = costValsPct
                        .filter(Number.isFinite)
@@ -1650,7 +1650,7 @@ function calcTotalStock(p) {
     /* ---------- 3-E. Profit × Stay 散布図 ---------- */
     const scatter = soldWin.map(p=>({
       x:(p.rawDays||0)+(p.factoryDays||0)+(p.warehouseDays||0)+(p.storeDays||0),
-      y:config.basePrice-p.total(),
+      y:config.sellPrice-p.total(),
       id:p.id
     }));
     upsertChart('profitScatter',{
