@@ -1475,10 +1475,10 @@ function calcTotalStock(p) {
       let cap = config.stock[id].cap || 1;
       let total = psiFiltered.reduce((a, p) => {
         let val = 0;
-        if (id === "Raw") val = (p.raw?.after ?? 0) + (p.rawInTransit ?? 0);
-        if (id === "Factory") val = (p.factory?.after ?? 0) + (p.facInTransit ?? 0);
-        if (id === "Warehouse") val = (p.warehouse?.after ?? 0) + (p.fwInTransit ?? 0);
-        if (id === "Store") val = (p.store?.after ?? 0) + (p.wsInTransit ?? 0);
+        if (id === "Raw") val = (p.raw?.after ?? 0);
+        if (id === "Factory") val = (p.factory?.after ?? 0);
+        if (id === "Warehouse") val = (p.warehouse?.after ?? 0);
+        if (id === "Store") val = (p.store?.after ?? 0);
         return a + val;
       }, 0);
       return cap > 0 && totalTurns > 0 ? total / (totalTurns * cap) : 0;
@@ -1674,10 +1674,10 @@ function calcTotalStock(p) {
       return psiLog.filter(p => p.turn > 0).slice(-windowSize).map(p => {
         let cap = config.stock[id].cap || 1;
         let after = 0;
-        if (id === "Raw") after = (p.raw?.after ?? 0) + (p.rawInTransit ?? 0);
-        if (id === "Factory") after = (p.factory?.after ?? 0) + (p.facInTransit ?? 0);
-        if (id === "Warehouse") after = (p.warehouse?.after ?? 0) + (p.fwInTransit ?? 0);
-        if (id === "Store") after = (p.store?.after ?? 0) + (p.wsInTransit ?? 0);
+        if (id === "Raw") after = (p.raw?.after ?? 0);
+        if (id === "Factory") after = (p.factory?.after ?? 0);
+        if (id === "Warehouse") after = (p.warehouse?.after ?? 0);
+        if (id === "Store") after = (p.store?.after ?? 0);
         return cap > 0 ? after / cap : 0;
       });
     });
@@ -1699,8 +1699,18 @@ function calcTotalStock(p) {
       options: {
         responsive: false,
         animation: false,
-        plugins: { legend: { position: 'top' } },
-        scales: { y: { min: 0, max: 1.2, title: { display: true, text: "Utilization Ratio" }, ticks: { callback: v => (v * 100).toFixed(0) + '%'}} }
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const v = ctx.parsed.y ?? ctx.raw;
+                return `${ctx.dataset.label}: ${(v * 100).toFixed(1)} %`;
+              }
+            }
+          }
+        },
+        scales: { y: { title: { display: true, text: "Utilization Ratio" }, ticks: { callback: v => (v * 100).toFixed(0) + '%'}} }
       },
       ctx: document.getElementById('chart-caputil').getContext('2d')
     });
