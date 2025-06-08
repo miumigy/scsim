@@ -1414,180 +1414,191 @@ function calcTotalStock(p) {
   }
 
   /* ===== 7) ダッシュボード ================================================================== */
-  function renderDashboard(windowSize = 10) {
-    const mp = config.flow.Manufg.matPerPrd || 1;
-    const pp = config.flow.Manufg.prdPerMat || 1;
-    const asProd = (raw) => raw * (pp / mp);
+function renderDashboard(windowSize = 10) {
+  const mp = config.flow.Manufg.matPerPrd || 1;
+  const pp = config.flow.Manufg.prdPerMat || 1;
+  const asProd = (raw) => raw * (pp / mp);
 
-    // ==== 0. 累計・平均データ ====
-    const currDay = turn > 0 ? turn - 1 : 0;
-    const totalTurns = doCostsByTurn.filter(d => d.turn > 0).length;
-    const totalSales = soldProducts.length;
-    const totalDemand = psiLog.reduce((a, p) => a + (p.demand || 0), 0);
-    const totalShortage = psiLog.reduce((a, p) => a + (p.shortage || 0), 0);
-    const serviceLevel = totalDemand > 0 ? ((totalDemand - totalShortage) / totalDemand) : 0;
+  // ==== 0. 累計・平均データ ====
+  const currDay = turn > 0 ? turn - 1 : 0;
+  const totalTurns = doCostsByTurn.filter(d => d.turn > 0).length;
+  const totalSales = soldProducts.length;
+  const totalDemand = psiLog.reduce((a, p) => a + (p.demand || 0), 0);
+  const totalShortage = psiLog.reduce((a, p) => a + (p.shortage || 0), 0);
+  const serviceLevel = totalDemand > 0 ? ((totalDemand - totalShortage) / totalDemand) : 0;
 
-    // 在庫数量・日数（パイプ分含む, Qty/Days同等ロジック）
-    const sum = (arr) => arr.reduce((a, b) => a + b, 0);
-    const psiFiltered = psiLog.filter(p => p.turn > 0);
-    const safeDiv = (n, d) => d > 0 ? n / d : 0;
+  // 在庫数量・日数（パイプ分含む, Qty/Days同等ロジック）
+  const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+  const psiFiltered = psiLog.filter(p => p.turn > 0);
+  const safeDiv = (n, d) => d > 0 ? n / d : 0;
 
-    // NaN対策
-    const totalInvQty = ["raw", "factory", "warehouse", "store"].map((id) => {
-      if (id === "raw")       return safeDiv(sum(psiFiltered.map(p => (p.raw?.after ?? 0) + (p.rawInTransit ?? 0))), totalTurns);
-      if (id === "factory")   return safeDiv(sum(psiFiltered.map(p => (p.factory?.after ?? 0) + (p.facInTransit ?? 0))), totalTurns);
-      if (id === "warehouse") return safeDiv(sum(psiFiltered.map(p => (p.warehouse?.after ?? 0) + (p.fwInTransit ?? 0))), totalTurns);
-      if (id === "store")     return safeDiv(sum(psiFiltered.map(p => (p.store?.after ?? 0) + (p.wsInTransit ?? 0))), totalTurns);
-      return 0;
-    });
+  // NaN対策
+  const totalInvQty = ["raw", "factory", "warehouse", "store"].map((id) => {
+    if (id === "raw")       return safeDiv(sum(psiFiltered.map(p => (p.raw?.after ?? 0) + (p.rawInTransit ?? 0))), totalTurns);
+    if (id === "factory")   return safeDiv(sum(psiFiltered.map(p => (p.factory?.after ?? 0) + (p.facInTransit ?? 0))), totalTurns);
+    if (id === "warehouse") return safeDiv(sum(psiFiltered.map(p => (p.warehouse?.after ?? 0) + (p.fwInTransit ?? 0))), totalTurns);
+    if (id === "store")     return safeDiv(sum(psiFiltered.map(p => (p.store?.after ?? 0) + (p.wsInTransit ?? 0))), totalTurns);
+    return 0;
+  });
 
-    // Inventory Days: パイプラインを含め、製品Qty換算で滞留日数手計算
-    const calcInvDays = (keyAfter, keyTransit) => {
-      const totalDays = psiFiltered.length;
-      const totalStock = psiFiltered.reduce(
-        (a, p) => a + ((p[keyAfter]?.after ?? 0) + (p[keyTransit] ?? 0)), 0);
-      const totalSold = doCostsByTurn.filter(d => d.turn > 0)
-        .reduce((a, d) => a + (d.sold ?? 0), 0);
-      const avgStock = totalDays > 0 ? totalStock / totalDays : 0;
-      const avgSold = totalDays > 0 ? totalSold / totalDays : 1;
-      return avgSold > 0 ? avgStock / avgSold : 0;
-    };
-    const avgInvDays = [
-      calcInvDays("raw",      "rawInTransit"),
-      calcInvDays("factory",  "facInTransit"),
-      calcInvDays("warehouse","fwInTransit"),
-      calcInvDays("store",    "wsInTransit")
-    ];
+  // Inventory Days: パイプラインを含め、製品Qty換算で滞留日数手計算
+  const calcInvDays = (keyAfter, keyTransit) => {
+    const totalDays = psiFiltered.length;
+    const totalStock = psiFiltered.reduce(
+      (a, p) => a + ((p[keyAfter]?.after ?? 0) + (p[keyTransit] ?? 0)), 0);
+    const totalSold = doCostsByTurn.filter(d => d.turn > 0)
+      .reduce((a, d) => a + (d.sold ?? 0), 0);
+    const avgStock = totalDays > 0 ? totalStock / totalDays : 0;
+    const avgSold = totalDays > 0 ? totalSold / totalDays : 1;
+    return avgSold > 0 ? avgStock / avgSold : 0;
+  };
+  const avgInvDays = [
+    calcInvDays("raw",      "rawInTransit"),
+    calcInvDays("factory",  "facInTransit"),
+    calcInvDays("warehouse","fwInTransit"),
+    calcInvDays("store",    "wsInTransit")
+  ];
 
-    // キャパ占有率
-    const capFlow = ["RawPrc", "Manufg", "F2W", "W2S"].map(id => {
-      let cap = config.flow[id].cap || 1;
-      let total = psiFiltered.reduce((a, p) => {
-        if (id === "RawPrc") return a + (p.rawOrdered || 0);
-        if (id === "Manufg") return a + (p.mfgStarted || 0);
-        if (id === "F2W") return a + (p.factory?.shipped || 0);
-        if (id === "W2S") return a + (p.warehouse?.outflow || 0);
-        return a;
-      }, 0);
-      return cap > 0 && totalTurns > 0 ? total / (totalTurns * cap) : 0;
-    });
-    const capStock = ["Raw", "Factory", "Warehouse", "Store"].map(id => {
-      let cap = config.stock[id].cap || 1;
-      let total = psiFiltered.reduce((a, p) => {
-        let val = 0;
-        if (id === "Raw") val = (p.raw?.after ?? 0);
-        if (id === "Factory") val = (p.factory?.after ?? 0);
-        if (id === "Warehouse") val = (p.warehouse?.after ?? 0);
-        if (id === "Store") val = (p.store?.after ?? 0);
-        return a + val;
-      }, 0);
-      return cap > 0 && totalTurns > 0 ? total / (totalTurns * cap) : 0;
-    });
+  // キャパ占有率
+  const capFlow = ["RawPrc", "Manufg", "F2W", "W2S"].map(id => {
+    let cap = config.flow[id].cap || 1;
+    let total = psiFiltered.reduce((a, p) => {
+      if (id === "RawPrc") return a + (p.rawOrdered || 0);
+      if (id === "Manufg") return a + (p.mfgStarted || 0);
+      if (id === "F2W") return a + (p.factory?.shipped || 0);
+      if (id === "W2S") return a + (p.warehouse?.outflow || 0);
+      return a;
+    }, 0);
+    return cap > 0 && totalTurns > 0 ? total / (totalTurns * cap) : 0;
+  });
+  const capStock = ["Raw", "Factory", "Warehouse", "Store"].map(id => {
+    let cap = config.stock[id].cap || 1;
+    let total = psiFiltered.reduce((a, p) => {
+      let val = 0;
+      if (id === "Raw") val = (p.raw?.after ?? 0);
+      if (id === "Factory") val = (p.factory?.after ?? 0);
+      if (id === "Warehouse") val = (p.warehouse?.after ?? 0);
+      if (id === "Store") val = (p.store?.after ?? 0);
+      return a + val;
+    }, 0);
+    return cap > 0 && totalTurns > 0 ? total / (totalTurns * cap) : 0;
+  });
 
-    // 利益・現金・機会損失
-    const ncfSum = doCostsByTurn
-      .filter(d => d.turn > 0)
-      .reduce((a, d) => a + ((d.revenue ?? 0) - Object.values(d.actualCost || {}).reduce((x, y) => x + y, 0)), 0);
-    const abpSum = soldProducts
-      .reduce((a, p) => a + (config.sellPrice - p.total()), 0);
-    const currInvPrice = doCostsByTurn.length > 0 ? (doCostsByTurn.at(-1)?.invSell ?? 0) : 0;
-    const shortageLoss = totalShortage * (config.unitCosts?.Shortage ?? 0);
+  // 利益・現金・機会損失
+  const ncfSum = doCostsByTurn
+    .filter(d => d.turn > 0)
+    .reduce((a, d) => a + ((d.revenue ?? 0) - Object.values(d.actualCost || {}).reduce((x, y) => x + y, 0)), 0);
+  const abpSum = soldProducts
+    .reduce((a, p) => a + (config.sellPrice - p.total()), 0);
+  const currInvPrice = doCostsByTurn.length > 0 ? (doCostsByTurn.at(-1)?.invSell ?? 0) : 0;
+  const shortageLoss = totalShortage * (config.unitCosts?.Shortage ?? 0);
 
-    // ==== 1. 表レイアウト生成 ====
-    // 1-a. Net Cash/Profit表
-    const t1 = `
-      <table style="margin:0 auto 10px auto; width:100%; max-width:900px; font-size:1.1em; text-align:center;">
-        <tr>
-          <th>Day</th>
-          <th>Net Cash Flow</th>
-          <th>Activity Based Profit</th>
-          <th>Shortage Loss</th>
-          <th>Inventory Price</th>
-        </tr>
-        <tr>
-          <td style="font-weight:bold;">${currDay}</td>
-          <td style="font-weight:bold;">${ncfSum.toLocaleString()}</td>
-          <td style="font-weight:bold;">${Math.floor(abpSum).toLocaleString()}</td>
-          <td style="font-weight:bold;color:#d13f6d">${shortageLoss.toLocaleString()}</td>
-          <td style="font-weight:bold;">${currInvPrice.toLocaleString()}</td>
-        </tr>
-      </table>`;
-    // 1-b. Sale/Shortage/Service + 在庫・日数表
-    const t2 = `
-      <table style="margin:0 auto 10px auto; width:100%; max-width:900px; font-size:1.05em; text-align:center;">
-        <tr>
-          <th rowspan="2">Sale Qty</th>
-          <th rowspan="2">Shortage Qty</th>
-          <th rowspan="2">Service Level</th>
-          <th colspan="4">Inventory Qty (Avg)</th>
-          <th colspan="4">Inventory Days (Avg)</th>
-        </tr>
-        <tr>
-          <th>RM+InTr</th><th>Fct+InPr</th><th>Whs+InTr</th><th>Str+InTr</th>
-          <th>RM+InTr</th><th>Fct+InPr</th><th>Whs+InTr</th><th>Str+InTr</th>
-        </tr>
-        <tr>
-          <td style="font-weight:bold;">${totalSales.toLocaleString()}</td>
-          <td style="font-weight:bold;color:#d13f6d">${totalShortage}</td>
-          <td style="font-weight:bold;">${(serviceLevel * 100).toFixed(1)}%</td>
-          ${totalInvQty.map(v => `<td style="font-weight:bold;">${Number.isFinite(v) ? v.toFixed(1) : 0}</td>`).join('')}
-          ${avgInvDays.map(v => `<td style="font-weight:bold;">${Number.isFinite(v) ? v.toFixed(1) : 0}</td>`).join('')}
-        </tr>
-      </table>`;
-    // 1-c. Capacity Utilization表
-    const t3 = `
-      <table style="margin:0 auto 14px auto; width:100%; max-width:900px; font-size:1.05em; text-align:center;">
-        <tr>
-          <th colspan="4">Capacity Utilization (Flow)</th>
-          <th colspan="4">Capacity Utilization (Stock)</th>
-        </tr>
-        <tr>
-          <th>RM Procure</th><th>Factory Mfg</th><th>F2W Transport</th><th>W2S Transport</th>
-          <th>RM Stock</th><th>Factory</th><th>Warehouse</th><th>Store</th>
-        </tr>
-        <tr>
-          ${capFlow.map(v => `<td style="font-weight:bold;">${Number.isFinite(v) ? (v * 100).toFixed(1) : 0}%</td>`).join('')}
-          ${capStock.map(v => `<td style="font-weight:bold;">${Number.isFinite(v) ? (v * 100).toFixed(1) : 0}%</td>`).join('')}
-        </tr>
-      </table>`;
+  // NCF/ABP 利益率（Margin）計算
+  const totalRevenue = doCostsByTurn.filter(d => d.turn > 0).reduce((a, d) => a + (d.revenue ?? 0), 0);
+  const ncfMargin = totalRevenue > 0 ? (ncfSum / totalRevenue) * 100 : 0;
+  const abpMargin = totalRevenue > 0 ? (abpSum / totalRevenue) * 100 : 0;
 
-    // ==== 2. チャート・レイアウト ====
-    document.getElementById("dashboard").innerHTML = `
-      <div style="font-weight:bold;font-size:1.15em;margin-bottom:2px;text-align:center;">
-        <h3>Total Scores</h3>
+  // ==== 1. 表レイアウト生成 ====
+  // 1-a. Net Cash/Profit表（1段目にKPI追加、Service Level移動）
+  const t1 = `
+    <table style="margin:0 auto 10px auto; width:100%; max-width:900px; font-size:1.1em; text-align:center;">
+      <tr>
+        <th>Day</th>
+        <th>Net Cash Flow</th>
+        <th>NCF Margin</th>
+        <th>Activity Based Profit</th>
+        <th>ABP Margin</th>
+        <th>Service Level</th>
+        <th>Shortage Loss</th>
+        <th>Inventory Price</th>
+      </tr>
+      <tr>
+        <td style="font-weight:bold;">${currDay}</td>
+        <td style="font-weight:bold;">${ncfSum.toLocaleString()}</td>
+        <td style="font-weight:bold;">${ncfMargin.toFixed(1)}%</td>
+        <td style="font-weight:bold;">${Math.floor(abpSum).toLocaleString()}</td>
+        <td style="font-weight:bold;">${abpMargin.toFixed(1)}%</td>
+        <td style="font-weight:bold;">${(serviceLevel * 100).toFixed(1)}%</td>
+        <td style="font-weight:bold;color:#d13f6d">${shortageLoss.toLocaleString()}</td>
+        <td style="font-weight:bold;">${currInvPrice.toLocaleString()}</td>
+      </tr>
+    </table>`;
+
+  // 1-b. Sale/Shortage + 在庫・日数表（Service Levelを削除）
+  const t2 = `
+    <table style="margin:0 auto 10px auto; width:100%; max-width:900px; font-size:1.05em; text-align:center;">
+      <tr>
+        <th rowspan="2">Sale Qty</th>
+        <th rowspan="2">Shortage Qty</th>
+        <th colspan="4">Inventory Qty (Avg)</th>
+        <th colspan="4">Inventory Days (Avg)</th>
+      </tr>
+      <tr>
+        <th>RM+InTr</th><th>Fct+InPr</th><th>Whs+InTr</th><th>Str+InTr</th>
+        <th>RM+InTr</th><th>Fct+InPr</th><th>Whs+InTr</th><th>Str+InTr</th>
+      </tr>
+      <tr>
+        <td style="font-weight:bold;">${totalSales.toLocaleString()}</td>
+        <td style="font-weight:bold;color:#d13f6d">${totalShortage}</td>
+        ${totalInvQty.map(v => `<td style="font-weight:bold;">${Number.isFinite(v) ? v.toFixed(1) : 0}</td>`).join('')}
+        ${avgInvDays.map(v => `<td style="font-weight:bold;">${Number.isFinite(v) ? v.toFixed(1) : 0}</td>`).join('')}
+      </tr>
+    </table>`;
+
+  // 1-c. Capacity Utilization表
+  const t3 = `
+    <table style="margin:0 auto 14px auto; width:100%; max-width:900px; font-size:1.05em; text-align:center;">
+      <tr>
+        <th colspan="4">Capacity Utilization (Flow)</th>
+        <th colspan="4">Capacity Utilization (Stock)</th>
+      </tr>
+      <tr>
+        <th>RM Procure</th><th>Factory Mfg</th><th>F2W Transport</th><th>W2S Transport</th>
+        <th>RM Stock</th><th>Factory</th><th>Warehouse</th><th>Store</th>
+      </tr>
+      <tr>
+        ${capFlow.map(v => `<td style="font-weight:bold;">${Number.isFinite(v) ? (v * 100).toFixed(1) : 0}%</td>`).join('')}
+        ${capStock.map(v => `<td style="font-weight:bold;">${Number.isFinite(v) ? (v * 100).toFixed(1) : 0}%</td>`).join('')}
+      </tr>
+    </table>`;
+
+  // ==== 2. チャート・レイアウト ====
+  document.getElementById("dashboard").innerHTML = `
+    <div style="font-weight:bold;font-size:1.15em;margin-bottom:2px;text-align:center;">
+      <h3>Total Scores</h3>
+    </div>
+    ${t1}${t2}${t3}
+    <div class="dashboard-grid">
+      <div class="dbox">
+        <h3>Sales &amp; Inventory Qty Changes</h3>
+        <canvas id="chart-qty"  width="420" height="260"></canvas>
       </div>
-      ${t1}${t2}${t3}
-      <div class="dashboard-grid">
-        <div class="dbox">
-          <h3>Sales &amp; Inventory Qty Changes</h3>
-          <canvas id="chart-qty"  width="420" height="260"></canvas>
-        </div>
-        <div class="dbox">
-          <h3>Inventory Days by Location (${windowSize}d)</h3>
-          <canvas id="chart-stock-pie" width="420" height="260"></canvas>
-        </div>
-        <div class="dbox" style="grid-column: span 2;">
-          <h3>Capacity Utilization Changes (Flow/Stock)</h3>
-          <canvas id="chart-caputil" width="870" height="250"></canvas>
-        </div>
-        <div class="dbox">
-          <h3>Net CF &amp; Activity Based Profit Changes</h3>
-          <canvas id="chart-cf"   width="420" height="260"></canvas>
-        </div>
-        <div class="dbox">
-          <h3>Activity Based Cost Ratio (${windowSize}d)</h3>
-          <canvas id="chart-cost-pie" width="420" height="260"></canvas>
-        </div>
-        <div class="dbox">
-          <h3>Activity Based Profit x Stay Days (${windowSize}d)</h3>
-          <canvas id="chart-profit-scatter" width="420" height="260"></canvas>
-        </div>
-        <div class="dbox">
-          <h3>Avg Stay Days by Location (${windowSize}d)</h3>
-          <canvas id="chart-stay-radar" width="420" height="260"></canvas>
-        </div>
+      <div class="dbox">
+        <h3>Inventory Days by Location (${windowSize}d)</h3>
+        <canvas id="chart-stock-pie" width="420" height="260"></canvas>
       </div>
-    `;
+      <div class="dbox" style="grid-column: span 2;">
+        <h3>Capacity Utilization Changes (Flow/Stock)</h3>
+        <canvas id="chart-caputil" width="870" height="250"></canvas>
+      </div>
+      <div class="dbox">
+        <h3>Net CF &amp; Activity Based Profit Changes</h3>
+        <canvas id="chart-cf"   width="420" height="260"></canvas>
+      </div>
+      <div class="dbox">
+        <h3>Activity Based Cost Ratio (${windowSize}d)</h3>
+        <canvas id="chart-cost-pie" width="420" height="260"></canvas>
+      </div>
+      <div class="dbox">
+        <h3>Activity Based Profit x Stay Days (${windowSize}d)</h3>
+        <canvas id="chart-profit-scatter" width="420" height="260"></canvas>
+      </div>
+      <div class="dbox">
+        <h3>Avg Stay Days by Location (${windowSize}d)</h3>
+        <canvas id="chart-stay-radar" width="420" height="260"></canvas>
+      </div>
+    </div>
+  `;
 
     // ==== 3. チャート描画 ====
     const PSI  = psiLog        .filter(p => p.turn > 0).slice(-windowSize);
