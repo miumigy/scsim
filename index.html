@@ -1197,7 +1197,6 @@ function calcTotalStock(p) {
     }
   };
 
-
   /* ===== 1) Summary (Activity Based Cost by Day, per Prd) ===================================== */
   function renderSummary() {
     ScrollKeeper.save("summary");
@@ -1416,43 +1415,148 @@ function calcTotalStock(p) {
 
   /* ===== 7) ダッシュボード ================================================================== */
   function renderDashboard(windowSize = 10) {
+    const mp = config.flow.Manufg.matPerPrd || 1;
+    const pp = config.flow.Manufg.prdPerMat || 1;
+    const asProd = (raw) => raw * (pp / mp);
 
-    // --- タイトル＋累計サマリー1行 ---
-    // --- 累計値計算 ---
+    // ==== 0. 累計・平均データ ====
     const currDay = turn > 0 ? turn - 1 : 0;
+    const totalTurns = doCostsByTurn.filter(d => d.turn > 0).length;
+    const totalSales = soldProducts.length;
+    const totalDemand = psiLog.reduce((a, p) => a + (p.demand || 0), 0);
+    const totalShortage = psiLog.reduce((a, p) => a + (p.shortage || 0), 0);
+    const serviceLevel = totalDemand > 0 ? ((totalDemand - totalShortage) / totalDemand) : 0;
+
+    // 在庫数量・日数（パイプ分含む, Qty/Days同等ロジック）
+    const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+    const psiFiltered = psiLog.filter(p => p.turn > 0);
+    const safeDiv = (n, d) => d > 0 ? n / d : 0;
+
+    // NaN対策
+    const totalInvQty = ["raw", "factory", "warehouse", "store"].map((id) => {
+      if (id === "raw")       return safeDiv(sum(psiFiltered.map(p => (p.raw?.after ?? 0) + (p.rawInTransit ?? 0))), totalTurns);
+      if (id === "factory")   return safeDiv(sum(psiFiltered.map(p => (p.factory?.after ?? 0) + (p.facInTransit ?? 0))), totalTurns);
+      if (id === "warehouse") return safeDiv(sum(psiFiltered.map(p => (p.warehouse?.after ?? 0) + (p.fwInTransit ?? 0))), totalTurns);
+      if (id === "store")     return safeDiv(sum(psiFiltered.map(p => (p.store?.after ?? 0) + (p.wsInTransit ?? 0))), totalTurns);
+      return 0;
+    });
+
+    // Inventory Days: パイプラインを含め、製品Qty換算で滞留日数手計算
+    const calcInvDays = (keyAfter, keyTransit) => {
+      const totalDays = psiFiltered.length;
+      const totalStock = psiFiltered.reduce(
+        (a, p) => a + ((p[keyAfter]?.after ?? 0) + (p[keyTransit] ?? 0)), 0);
+      const totalSold = doCostsByTurn.filter(d => d.turn > 0)
+        .reduce((a, d) => a + (d.sold ?? 0), 0);
+      const avgStock = totalDays > 0 ? totalStock / totalDays : 0;
+      const avgSold = totalDays > 0 ? totalSold / totalDays : 1;
+      return avgSold > 0 ? avgStock / avgSold : 0;
+    };
+    const avgInvDays = [
+      calcInvDays("raw",      "rawInTransit"),
+      calcInvDays("factory",  "facInTransit"),
+      calcInvDays("warehouse","fwInTransit"),
+      calcInvDays("store",    "wsInTransit")
+    ];
+
+    // キャパ占有率
+    const capFlow = ["RawPrc", "Manufg", "F2W", "W2S"].map(id => {
+      let cap = config.flow[id].cap || 1;
+      let total = psiFiltered.reduce((a, p) => {
+        if (id === "RawPrc") return a + (p.rawOrdered || 0);
+        if (id === "Manufg") return a + (p.mfgStarted || 0);
+        if (id === "F2W") return a + (p.factory?.shipped || 0);
+        if (id === "W2S") return a + (p.warehouse?.outflow || 0);
+        return a;
+      }, 0);
+      return cap > 0 && totalTurns > 0 ? total / (totalTurns * cap) : 0;
+    });
+    const capStock = ["Raw", "Factory", "Warehouse", "Store"].map(id => {
+      let cap = config.stock[id].cap || 1;
+      let total = psiFiltered.reduce((a, p) => {
+        let val = 0;
+        if (id === "Raw") val = (p.raw?.after ?? 0) + (p.rawInTransit ?? 0);
+        if (id === "Factory") val = (p.factory?.after ?? 0) + (p.facInTransit ?? 0);
+        if (id === "Warehouse") val = (p.warehouse?.after ?? 0) + (p.fwInTransit ?? 0);
+        if (id === "Store") val = (p.store?.after ?? 0) + (p.wsInTransit ?? 0);
+        return a + val;
+      }, 0);
+      return cap > 0 && totalTurns > 0 ? total / (totalTurns * cap) : 0;
+    });
+
+    // 利益・現金・機会損失
     const ncfSum = doCostsByTurn
       .filter(d => d.turn > 0)
-      .reduce((a, d) => a + (d.revenue - Object.values(d.actualCost || {}).reduce((x, y) => x + y, 0)), 0);
+      .reduce((a, d) => a + ((d.revenue ?? 0) - Object.values(d.actualCost || {}).reduce((x, y) => x + y, 0)), 0);
     const abpSum = soldProducts
       .reduce((a, p) => a + (config.sellPrice - p.total()), 0);
-    const currInvPrice = doCostsByTurn.length > 0 ? doCostsByTurn.at(-1).invSell : 0;
-    const shortageSum = doCostsByTurn
-      .filter(d => d.turn > 0)
-      .reduce((a, d) => a + (d.actualCost.Shortage || 0), 0);
+    const currInvPrice = doCostsByTurn.length > 0 ? (doCostsByTurn.at(-1)?.invSell ?? 0) : 0;
+    const shortageLoss = totalShortage * (config.unitCosts?.Shortage ?? 0);
 
-    // --- サマリー表HTML ---
-    const summaryTitle = `<div style="font-weight:bold;font-size:1.15em;margin-bottom:2px;text-align:center;"><h3>Total Profit &amp; Inventory</h3></div>`;
-    const summaryTable = `
-  <table style="margin:0 auto 18px auto; width:calc(100% - 12px); max-width:900px; font-size:1.15em; text-align:center;">
-    <tr>
-      <th style="text-align:center;">Day</th>
-      <th style="text-align:center;">Net Cash Flow</th>
-      <th style="text-align:center;">Activity Based Profit</th>
-      <th style="text-align:center;">Shortage Loss</th>
-      <th style="text-align:center;">Inventory Price</th>
-    </tr>
-    <tr>
-    <td style="text-align:center;font-weight:bold;">${currDay}</td>
-    <td style="text-align:center;font-weight:bold;">${ncfSum.toLocaleString()}</td>
-    <td style="text-align:center;font-weight:bold;">${Math.floor(abpSum).toLocaleString()}</td>
-    <td style="text-align:center;font-weight:bold;color:#d13f6d">${shortageSum.toLocaleString()}</td>
-    <td style="text-align:center;font-weight:bold;">${currInvPrice.toLocaleString()}</td>
-    </tr>
-  </table>
-    `;
-    /* ---------- 0.  HTML骨格 ---------- */
-    document.getElementById("dashboard").innerHTML =
-      summaryTitle + summaryTable +  `
+    // ==== 1. 表レイアウト生成 ====
+    // 1-a. Net Cash/Profit表
+    const t1 = `
+      <table style="margin:0 auto 10px auto; width:100%; max-width:900px; font-size:1.1em; text-align:center;">
+        <tr>
+          <th>Day</th>
+          <th>Net Cash Flow</th>
+          <th>Activity Based Profit</th>
+          <th>Shortage Loss</th>
+          <th>Inventory Price</th>
+        </tr>
+        <tr>
+          <td style="font-weight:bold;">${currDay}</td>
+          <td style="font-weight:bold;">${ncfSum.toLocaleString()}</td>
+          <td style="font-weight:bold;">${Math.floor(abpSum).toLocaleString()}</td>
+          <td style="font-weight:bold;color:#d13f6d">${shortageLoss.toLocaleString()}</td>
+          <td style="font-weight:bold;">${currInvPrice.toLocaleString()}</td>
+        </tr>
+      </table>`;
+    // 1-b. Sale/Shortage/Service + 在庫・日数表
+    const t2 = `
+      <table style="margin:0 auto 10px auto; width:100%; max-width:900px; font-size:1.05em; text-align:center;">
+        <tr>
+          <th rowspan="2">Sale Qty</th>
+          <th rowspan="2">Shortage Qty</th>
+          <th rowspan="2">Service Level</th>
+          <th colspan="4">Inventory Qty (Avg)</th>
+          <th colspan="4">Inventory Days (Avg)</th>
+        </tr>
+        <tr>
+          <th>RM+InTr</th><th>Fct+InPr</th><th>Whs+InTr</th><th>Str+InTr</th>
+          <th>RM+InTr</th><th>Fct+InPr</th><th>Whs+InTr</th><th>Str+InTr</th>
+        </tr>
+        <tr>
+          <td style="font-weight:bold;">${totalSales.toLocaleString()}</td>
+          <td style="font-weight:bold;color:#d13f6d">${totalShortage}</td>
+          <td style="font-weight:bold;">${(serviceLevel * 100).toFixed(1)}%</td>
+          ${totalInvQty.map(v => `<td style="font-weight:bold;">${Number.isFinite(v) ? v.toFixed(1) : 0}</td>`).join('')}
+          ${avgInvDays.map(v => `<td style="font-weight:bold;">${Number.isFinite(v) ? v.toFixed(1) : 0}</td>`).join('')}
+        </tr>
+      </table>`;
+    // 1-c. Capacity Utilization表
+    const t3 = `
+      <table style="margin:0 auto 14px auto; width:100%; max-width:900px; font-size:1.05em; text-align:center;">
+        <tr>
+          <th colspan="4">Capacity Utilization (Flow)</th>
+          <th colspan="4">Capacity Utilization (Stock)</th>
+        </tr>
+        <tr>
+          <th>RM Procure</th><th>Manufacturing</th><th>F2W Transport</th><th>W2S Transport</th>
+          <th>RM Stock</th><th>Factory</th><th>Warehouse</th><th>Store</th>
+        </tr>
+        <tr>
+          ${capFlow.map(v => `<td style="font-weight:bold;">${Number.isFinite(v) ? (v * 100).toFixed(1) : 0}%</td>`).join('')}
+          ${capStock.map(v => `<td style="font-weight:bold;">${Number.isFinite(v) ? (v * 100).toFixed(1) : 0}%</td>`).join('')}
+        </tr>
+      </table>`;
+
+    // ==== 2. チャート・レイアウト ====
+    document.getElementById("dashboard").innerHTML = `
+      <div style="font-weight:bold;font-size:1.15em;margin-bottom:2px;text-align:center;">
+        <h3>Total Scores</h3>
+      </div>
+      ${t1}${t2}${t3}
       <div class="dashboard-grid">
         <div class="dbox">
           <h3>Sales &amp; Inventory Qty Changes</h3>
@@ -1462,12 +1566,16 @@ function calcTotalStock(p) {
           <h3>Inventory Days by Location (${windowSize}d)</h3>
           <canvas id="chart-stock-pie" width="420" height="260"></canvas>
         </div>
+        <div class="dbox" style="grid-column: span 2;">
+          <h3>Capacity Utilization Changes (Flow/Stock)</h3>
+          <canvas id="chart-caputil" width="870" height="250"></canvas>
+        </div>
         <div class="dbox">
           <h3>Net CF &amp; Activity Based Profit Changes</h3>
           <canvas id="chart-cf"   width="420" height="260"></canvas>
         </div>
         <div class="dbox">
-          <h3>Activity Based Cost Ratio% (${windowSize}d)</h3>
+          <h3>Activity Based Cost Ratio (${windowSize}d)</h3>
           <canvas id="chart-cost-pie" width="420" height="260"></canvas>
         </div>
         <div class="dbox">
@@ -1481,20 +1589,19 @@ function calcTotalStock(p) {
       </div>
     `;
 
-    /* ---------- 1.  データ抽出 ---------- */
+    // ==== 3. チャート描画 ====
     const PSI  = psiLog        .filter(p => p.turn > 0).slice(-windowSize);
     const CF   = doCostsByTurn .filter(d => d.turn > 0).slice(-windowSize);
     const turns = PSI.map(p => p.turn);
 
-    /* ---------- 2.  汎用チャート生成ヘルパ ---------- */
     const CHART_CACHE = renderDashboard._cache ||= {};
     const COLORS = {
       sale:'#4ba3ff', short:'#ff7cae', store:'#ffb44c', wh:'#ffd84c',
       ncf:'#84b6f4',  abp  :'#ff99bb',
-      pie:['#4ba3ff','#ff7cae','#ffb44c','#ffd84c','#9ad7f5','#c8c8c8','#b5e7a0','#ff99bb']
+      pie:['#4ba3ff','#ff7cae','#ffb44c','#ffd84c','#9ad7f5','#c8c8c8','#b5e7a0','#ff99bb'],
+      flow:['#80bfff','#5bd7e9','#ffc266','#f28585'],
+      stock:['#8b94f1','#6ae2c8','#f7b26a','#ff96c5']
     };
-
-    /** 中央テキスト付きドーナツ用プラグイン (複数回登録を避ける) */
     if (!Chart.registry.plugins.get('centerText')) {
       Chart.register({
         id:'centerText',
@@ -1510,47 +1617,125 @@ function calcTotalStock(p) {
         }
       });
     }
-
     function upsertChart(key, cfgWithCtx) {
       if (CHART_CACHE[key]) CHART_CACHE[key].destroy();
       const { ctx, ...chartCfg } = cfgWithCtx;
       CHART_CACHE[key] = new Chart(ctx, chartCfg);
     }
 
-    /* ---------- 3-A. 売上／在庫折れ線 ---------- */
+    // 3-1. Inventory Days by Location
+    const avg = a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
+    const div = CF.map(d=>d.sold).filter(Boolean).reduce((a,b)=>a+b,0)/(CF.filter(d=>d.sold>0).length||1)||1;
+    const valsDays = [
+      avg(PSI.map(p=>asProd(p.rawInTransit||0)))/div,
+      avg(PSI.map(p=>asProd(p.raw?.after   ||0)))/div,
+      avg(PSI.map(p=>p.facInTransit ||0))/div,
+      avg(PSI.map(p=>p.factory?.after||0))/div,
+      avg(PSI.map(p=>p.fwInTransit  ||0))/div,
+      avg(PSI.map(p=>p.warehouse?.after||0))/div,
+      avg(PSI.map(p=>p.wsInTransit  ||0))/div,
+      avg(PSI.map(p=>p.store?.after  ||0))/div
+    ].map(v => Number.isFinite(v) ? v : 0);
+    const stockLbls=["RM InTr","RM","Fct InPr","Fct","F2W","Whs","W2S","Store"];
+    const stockCenter = `${valsDays.reduce((a,b)=>a+b,0).toFixed(1)}\nDays`;
+    upsertChart('stockPie',{
+      type:'doughnut',
+      data:{labels:stockLbls,datasets:[{data:valsDays,backgroundColor:COLORS.pie}]},
+      options:{responsive:false,animation:false,cutout:'70%',
+        plugins:{
+          legend:{position:'bottom'},
+          centerText:{text:stockCenter},
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.label}: ${ctx.parsed.toFixed(1)} Days`
+            }
+          }
+        }
+      },
+      ctx:document.getElementById('chart-stock-pie').getContext('2d')
+    });
+
+    // 3-2. Capacity Utilization Changes (Flow/Stock)
+    const turnArr = psiLog.filter(p => p.turn > 0).slice(-windowSize).map(p => p.turn);
+    // Flow
+    const capFlowHistory = ["RawPrc", "Manufg", "F2W", "W2S"].map((id, k) => {
+      return psiLog.filter(p => p.turn > 0).slice(-windowSize).map(p => {
+        let cap = config.flow[id].cap || 1;
+        let v = 0;
+        if (id === "RawPrc") v = p.rawOrdered || 0;
+        if (id === "Manufg") v = p.mfgStarted || 0;
+        if (id === "F2W") v = p.factory?.shipped || 0;
+        if (id === "W2S") v = p.warehouse?.outflow || 0;
+        return cap > 0 ? v / cap : 0;
+      });
+    });
+    // Stock
+    const capStockHistory = ["Raw", "Factory", "Warehouse", "Store"].map((id, k) => {
+      return psiLog.filter(p => p.turn > 0).slice(-windowSize).map(p => {
+        let cap = config.stock[id].cap || 1;
+        let after = 0;
+        if (id === "Raw") after = (p.raw?.after ?? 0) + (p.rawInTransit ?? 0);
+        if (id === "Factory") after = (p.factory?.after ?? 0) + (p.facInTransit ?? 0);
+        if (id === "Warehouse") after = (p.warehouse?.after ?? 0) + (p.fwInTransit ?? 0);
+        if (id === "Store") after = (p.store?.after ?? 0) + (p.wsInTransit ?? 0);
+        return cap > 0 ? after / cap : 0;
+      });
+    });
+    upsertChart('caputil', {
+      type: 'line',
+      data: {
+        labels: turnArr,
+        datasets: [
+          { label: 'Flow:RM Procure',    data: capFlowHistory[0], borderWidth: 2, borderColor: COLORS.flow[0], backgroundColor: COLORS.flow[0], tension: .3, fill: false },
+          { label: 'Flow:Manufg',        data: capFlowHistory[1], borderWidth: 2, borderColor: COLORS.flow[1], backgroundColor: COLORS.flow[1], tension: .3, fill: false },
+          { label: 'Flow:F2W Trans',     data: capFlowHistory[2], borderWidth: 2, borderColor: COLORS.flow[2], backgroundColor: COLORS.flow[2], tension: .3, fill: false },
+          { label: 'Flow:W2S Trans',     data: capFlowHistory[3], borderWidth: 2, borderColor: COLORS.flow[3], backgroundColor: COLORS.flow[3], tension: .3, fill: false },
+          { label: 'Stock:RM Stock',     data: capStockHistory[0], borderWidth: 2, borderDash: [5,4], borderColor: COLORS.stock[0], backgroundColor: COLORS.stock[0], tension: .3, fill: false },
+          { label: 'Stock:Factory',      data: capStockHistory[1], borderWidth: 2, borderDash: [5,4], borderColor: COLORS.stock[1], backgroundColor: COLORS.stock[1], tension: .3, fill: false },
+          { label: 'Stock:Warehouse',    data: capStockHistory[2], borderWidth: 2, borderDash: [5,4], borderColor: COLORS.stock[2], backgroundColor: COLORS.stock[2], tension: .3, fill: false },
+          { label: 'Stock:Store',        data: capStockHistory[3], borderWidth: 2, borderDash: [5,4], borderColor: COLORS.stock[3], backgroundColor: COLORS.stock[3], tension: .3, fill: false }
+        ]
+      },
+      options: {
+        responsive: false,
+        animation: false,
+        plugins: { legend: { position: 'top' } },
+        scales: { y: { min: 0, max: 1.2, title: { display: true, text: "Utilization Ratio" }, ticks: { callback: v => (v * 100).toFixed(0) + '%'}} }
+      },
+      ctx: document.getElementById('chart-caputil').getContext('2d')
+    });
+
+    // 3-3. Sales/Inventory Qty
     const sales    = CF .map(d=>d.sold     ??0);
     const shortage = PSI.map(p=>p.shortage ??0);
-    const storeInv = PSI.map(p=>(p.store.after ??0)+(p.wsInTransit??0));
-    const whInv    = PSI.map(p=>(p.warehouse.after??0)+(p.fwInTransit??0));
-
+    const storeInv = PSI.map(p=>(p.store?.after ??0)+(p.wsInTransit??0));
+    const whInv    = PSI.map(p=>(p.warehouse?.after??0)+(p.fwInTransit??0));
     upsertChart('qty',{
       type:'line',
       data:{
         labels:turns,
         datasets:[
           {label:'Sales',    data:sales,    borderColor:COLORS.sale,  borderWidth:2, tension:.3, fill:false},
-          {label:'Shortage',   data:shortage, borderColor:COLORS.short, borderWidth:2, tension:.3, fill:false},
+          {label:'Shortage', data:shortage, borderColor:COLORS.short, borderWidth:2, tension:.3, fill:false},
           {label:'Str+InTr',data:storeInv,borderColor:COLORS.store, borderWidth:2, tension:.3, fill:false},
-          {label:'Whs+InTr',      data:whInv,    borderColor:COLORS.wh,    borderWidth:2, tension:.3, fill:false}
+          {label:'Whs+InTr',data:whInv,    borderColor:COLORS.wh,    borderWidth:2, tension:.3, fill:false}
         ]},
       options:{responsive:false,animation:false,plugins:{legend:{position:'top'}},scales:{y:{beginAtZero:true}}},
       ctx:document.getElementById('chart-qty').getContext('2d')
     });
 
-    /* ---------- 3-B. NCF／ABP 棒グラフ ---------- */
-    const revenue = CF.map(d=>d.revenue);
+    // 3-4. Net CF & Activity Based Profit
+    const revenue = CF.map(d=>d.revenue ?? 0);
     const costSum = CF.map(d =>
       Object.entries(d.actualCost||{})
         .filter(([k])=>k!=="Shortage")
         .reduce((a,[,b])=>a+b,0)
     );
-
     const ncf     = revenue.map((r,i)=>r-costSum[i]);
     const abp     = CF.map(d=>{
         const sold= soldProducts.filter(p=>p.turn===d.turn);
         return sold.reduce((s,p)=>s+(config.sellPrice-p.total()),0);
     });
-
     upsertChart('cf',{
       type:'bar',
       data:{
@@ -1563,7 +1748,7 @@ function calcTotalStock(p) {
       ctx:document.getElementById('chart-cf').getContext('2d')
     });
 
-    /* ---------- 3-C. 活動コスト比率ドーナツ ---------- */
+    // 3-5. Activity Based Cost Ratio% ドーナツ
     const soldWin = soldProducts.filter(p => turns.includes(p.turn));
     const costAgg = {};
     soldWin.forEach(p =>
@@ -1579,7 +1764,7 @@ function calcTotalStock(p) {
       classAgg[classify(k)] = (classAgg[classify(k)] || 0) + v);
     const costLbls = ['Raw Material', 'Factory', 'Transport', 'Warehouse', 'Store']
                       .filter(l => classAgg[l] !== undefined);
-    const totRev = soldWin.length * config.sellPrice || 1;
+    const totRev = soldWin.length * (config.sellPrice ?? 1) || 1;
     const costValsPct = costLbls.map(l => ((classAgg[l] ?? 0) / totRev) * 100);
     const totalPct = costValsPct
                        .filter(Number.isFinite)
@@ -1611,43 +1796,7 @@ function calcTotalStock(p) {
       ctx: document.getElementById('chart-cost-pie').getContext('2d')
     });
 
-    /* ---------- 3-D. 在庫日数ドーナツ ---------- */
-    const mp=config.flow.Manufg.matPerPrd||1, pp=config.flow.Manufg.prdPerMat||1;
-    const avg = a=>a.reduce((x,y)=>x+y,0)/Math.max(a.length,1);
-    const div = CF.map(d=>d.sold).filter(Boolean).reduce((a,b)=>a+b,0)/(CF.filter(d=>d.sold>0).length||1)||1;
-
-    function asProd(raw){return raw*pp/mp;}
-    const valsDays = [
-      avg(PSI.map(p=>asProd(p.rawInTransit||0)))/div,
-      avg(PSI.map(p=>asProd(p.raw.after   ||0)))/div,
-      avg(PSI.map(p=>p.facInTransit ||0))/div,
-      avg(PSI.map(p=>p.factory.after||0))/div,
-      avg(PSI.map(p=>p.fwInTransit  ||0))/div,
-      avg(PSI.map(p=>p.warehouse.after||0))/div,
-      avg(PSI.map(p=>p.wsInTransit  ||0))/div,
-      avg(PSI.map(p=>p.store.after  ||0))/div
-    ];
-    const stockLbls=["RM InTr","RM","Fct InPr","Fct","F2W","Whs","W2S","Store"];
-    const stockCenter = `${valsDays.reduce((a,b)=>a+b,0).toFixed(1)}\nDays`;
-
-    upsertChart('stockPie',{
-      type:'doughnut',
-      data:{labels:stockLbls,datasets:[{data:valsDays,backgroundColor:COLORS.pie}]},
-      options:{responsive:false,animation:false,cutout:'70%',
-      plugins:{
-          legend:{position:'bottom'},
-          centerText:{text:stockCenter},
-          tooltip: {
-            callbacks: {
-              label: ctx => `${ctx.label}: ${ctx.parsed.toFixed(1)} Days`
-            }
-          }
-        }
-      },
-      ctx:document.getElementById('chart-stock-pie').getContext('2d')
-    });
-
-    /* ---------- 3-E. Profit × Stay 散布図 ---------- */
+    // 3-6. Activity Based Profit x Stay Days
     const scatter = soldWin.map(p=>({
       x:(p.rawDays||0)+(p.factoryDays||0)+(p.warehouseDays||0)+(p.storeDays||0),
       y:config.sellPrice-p.total(),
@@ -1667,17 +1816,28 @@ function calcTotalStock(p) {
       ctx:document.getElementById('chart-profit-scatter').getContext('2d')
     });
 
-    /* ---------- 3-F. 滞留日数レーダー ---------- */
+    // 3-7. 滞留日数レーダー
     const stayKeys=['rawDays','factoryDays','warehouseDays','storeDays'];
     const stayVals=stayKeys.map(k=>avg(soldWin.map(p=>p[k]||0)));
     upsertChart('stayRadar',{
       type:'radar',
-      data:{labels:['Raw Material','Factory','Warehouse','Store'],datasets:[{label:`Avg Stay Days(${windowSize}d)`,data:stayVals,fill:true,pointRadius:5,backgroundColor:'rgba(76,191,255,.2)',borderColor:'#4ba3ff'}]},
+      data:{
+        labels:['Raw Material','Factory','Warehouse','Store'],
+        datasets:[{
+          label:`Avg Stay Days(${windowSize}d)`,
+          data:stayVals,
+          fill:true,
+          pointRadius:5,
+          backgroundColor:'rgba(76,191,255,.2)',
+          borderColor:'#4ba3ff'
+        }]
+      },
       options:{responsive:false,animation:false,plugins:{legend:{display:false}},
                scales:{r:{beginAtZero:true,suggestedMax:Math.max(2,...stayVals)}}},
       ctx:document.getElementById('chart-stay-radar').getContext('2d')
     });
   }
+
   // 外部からもwindowSize指定で呼べるようエイリアス
   window.renderDashboard = renderDashboard;
 
