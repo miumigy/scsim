@@ -1523,8 +1523,8 @@ function calcTotalStock(p) {
           <th colspan="4">Inventory Days (Avg)</th>
         </tr>
         <tr>
-          <th>RM+InT</th><th>Fct+InP</th><th>Whs+InT</th><th>Str+InT</th>
-          <th>RM+InT</th><th>Fct+InP</th><th>Whs+InT</th><th>Str+InT</th>
+          <th>RM+InTr</th><th>Fct+InPr</th><th>Whs+InTr</th><th>Str+InTr</th>
+          <th>RM+InTr</th><th>Fct+InPr</th><th>Whs+InTr</th><th>Str+InTr</th>
         </tr>
         <tr>
           <td style="font-weight:bold;">${totalSales.toLocaleString()}</td>
@@ -1636,7 +1636,7 @@ function calcTotalStock(p) {
       avg(PSI.map(p=>p.wsInTransit  ||0))/div,
       avg(PSI.map(p=>p.store?.after  ||0))/div
     ].map(v => Number.isFinite(v) ? v : 0);
-    const stockLbls=["RM InTr","RM","Fct InPr","Fct","F2W","Whs","W2S","Store"];
+    const stockLbls=["RM InTr","RM","Fct InPr","Fct","F2W","Whs","W2S","Str"];
     const stockCenter = `${valsDays.reduce((a,b)=>a+b,0).toFixed(1)}\nDays`;
     upsertChart('stockPie',{
       type:'doughnut',
@@ -1686,14 +1686,14 @@ function calcTotalStock(p) {
       data: {
         labels: turnArr,
         datasets: [
-          { label: 'Flow:RM Procure',    data: capFlowHistory[0], borderWidth: 2, borderColor: COLORS.flow[0], backgroundColor: COLORS.flow[0], tension: .3, fill: false },
-          { label: 'Flow:Manufg',        data: capFlowHistory[1], borderWidth: 2, borderColor: COLORS.flow[1], backgroundColor: COLORS.flow[1], tension: .3, fill: false },
-          { label: 'Flow:F2W Trans',     data: capFlowHistory[2], borderWidth: 2, borderColor: COLORS.flow[2], backgroundColor: COLORS.flow[2], tension: .3, fill: false },
-          { label: 'Flow:W2S Trans',     data: capFlowHistory[3], borderWidth: 2, borderColor: COLORS.flow[3], backgroundColor: COLORS.flow[3], tension: .3, fill: false },
-          { label: 'Stock:RM Stock',     data: capStockHistory[0], borderWidth: 2, borderDash: [5,4], borderColor: COLORS.stock[0], backgroundColor: COLORS.stock[0], tension: .3, fill: false },
-          { label: 'Stock:Factory',      data: capStockHistory[1], borderWidth: 2, borderDash: [5,4], borderColor: COLORS.stock[1], backgroundColor: COLORS.stock[1], tension: .3, fill: false },
-          { label: 'Stock:Warehouse',    data: capStockHistory[2], borderWidth: 2, borderDash: [5,4], borderColor: COLORS.stock[2], backgroundColor: COLORS.stock[2], tension: .3, fill: false },
-          { label: 'Stock:Store',        data: capStockHistory[3], borderWidth: 2, borderDash: [5,4], borderColor: COLORS.stock[3], backgroundColor: COLORS.stock[3], tension: .3, fill: false }
+          { label: 'RM Prc',    data: capFlowHistory[0], borderWidth: 2, borderColor: COLORS.flow[0], backgroundColor: COLORS.flow[0], tension: .3, fill: false },
+          { label: 'Mfg',   data: capFlowHistory[1], borderWidth: 2, borderColor: COLORS.flow[1], backgroundColor: COLORS.flow[1], tension: .3, fill: false },
+          { label: 'F2W',   data: capFlowHistory[2], borderWidth: 2, borderColor: COLORS.flow[2], backgroundColor: COLORS.flow[2], tension: .3, fill: false },
+          { label: 'W2S',   data: capFlowHistory[3], borderWidth: 2, borderColor: COLORS.flow[3], backgroundColor: COLORS.flow[3], tension: .3, fill: false },
+          { label: 'RM Stk',    data: capStockHistory[0], borderWidth: 2, borderDash: [5,4], borderColor: COLORS.stock[0], backgroundColor: COLORS.stock[0], tension: .3, fill: false },
+          { label: 'Fct',   data: capStockHistory[1], borderWidth: 2, borderDash: [5,4], borderColor: COLORS.stock[1], backgroundColor: COLORS.stock[1], tension: .3, fill: false },
+          { label: 'Whs',   data: capStockHistory[2], borderWidth: 2, borderDash: [5,4], borderColor: COLORS.stock[2], backgroundColor: COLORS.stock[2], tension: .3, fill: false },
+          { label: 'Str',   data: capStockHistory[3], borderWidth: 2, borderDash: [5,4], borderColor: COLORS.stock[3], backgroundColor: COLORS.stock[3], tension: .3, fill: false }
         ]
       },
       options: {
