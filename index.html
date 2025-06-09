@@ -151,7 +151,7 @@
   <button class="tab-btn" data-tab="cashflow">CF Log</button>
   <button class="tab-btn" data-tab="summary">ABC Log(d/Prd)</button>
   <button class="tab-btn" data-tab="products">ABC Log(ID)</button>
-</div>
+  <button class="tab-btn" data-tab="help">Help</button>
 <div id="animation" class="tab active">
   <div id="sc-flow-caption" style="text-align:center;font-weight:bold;font-size:1.15em;margin-bottom:6px;">
   <h3>...Raw Material ---&gt Factory Mfg ---&gt Warehouse ---&gt Store ---&gt Customer :)</h3>
@@ -163,6 +163,92 @@
 <div id="cashflow"  class="tab"></div>
 <div id="summary"   class="tab"></div>
 <div id="products"  class="tab"></div>
+<div id="help" class="tab">
+  <div style="max-width:750px;margin:0 auto;padding:24px 8px 32px 16px;text-align:left;line-height:1.75;">
+    <h1 style="margin-bottom:0.3em;">ヘルプ／ユーザーガイド</h1>
+    <h2>1. 概要</h2>
+    <p>
+      このWebアプリは、調達・生産・物流・販売といった<b>サプライチェーンの基本構造をシミュレート</b>し、コストやサービスレベルなど<b>SCMの主要KPIを可視化</b>することで、その<b>関係性を学ぶ</b>ための教材です。
+      <br>SCM改革・サプライチェーンDXの基礎教育への活用を想定しています。
+    </p>
+
+    <h2>2. タブ・機能</h2>
+    <table style="font-size:1em;margin-bottom:1em;">
+      <tr><th style="min-width:110px;text-align:left;">タブ名</th><th>機能概要</th></tr>
+      <tr><td><b>Animation</b></td><td>サプライチェーンの流れを3Dで動的表示</td></tr>
+      <tr><td><b>Dashboard</b></td><td>KPI（利益・在庫日数・キャパ率等）を一覧化・各種グラフで可視化</td></tr>
+      <tr><td><b>PSI Table</b></td><td>各拠点の在庫・投入・出荷などを日別表示</td></tr>
+      <tr><td><b>CF Log</b></td><td>現金収支・売上・コストの推移</td></tr>
+      <tr><td><b>ABC Log(d/Prd)</b></td><td>日別のアクティビティ別コスト・利益・原価率</td></tr>
+      <tr><td><b>ABC Log(ID)</b></td><td>各製品単位での詳細コスト履歴</td></tr>
+      <tr><td><b>Help</b></td><td>本ドキュメント</td></tr>
+    </table>
+
+    <h2>3. 操作ガイド</h2>
+    <h3>3.1 シミュレーション進行</h3>
+    <ul>
+      <li><b>1 Day Progress</b>ボタン：1日分進めて再計算、アニメーションやダッシュボード・表を更新します。</li>
+      <li><b>Configrarion Editor</b>：「▼Display Config」で設定パラメータ（キャパ、費用、リードタイム等）を表示の上、JSON形式で直接編集可能です。編集後は「Update Config & Reset」で反映し、初日から再開します。</li>
+      <li><b>Auto/Manual Mode</b>：「Auto」で自動最適発注（マルチエシェロンプル型）、「Manual」で各フローの出荷・生産数を直接指示できます。</li>
+    </ul>
+    <h3>3.2 画面の見方</h3>
+    <ul>
+      <li><b>Animation</b>：在庫や流れのボトルネック、欠品等を直感的に捉えることができます。</li>
+      <li><b>Dashboard</b>：KPI（利益・サービスレベル・在庫・キャパ率）の状態・推移が視覚的に確認できます。</li>
+      <li><b>PSI Table</b>：入出庫推移や在庫過不足、PSIバランスを逐次チェックできます。</li>
+      <li><b>CF/ABC Log</b>：必要に応じて費用明細、日毎利益、品目別収益性を詳細分析できます。</li>
+    </ul>
+    <h3>3.3 よく使う設定項目</h3>
+    <table style="font-size:0.98em;">
+      <tr><th>項目名</th><th>例</th><th>説明</th></tr>
+      <tr><td>leadTime</td><td>3</td><td>リードタイム（日数）</td></tr>
+      <tr><td>orderInterval</td><td>3</td><td>発注間隔（日数）</td></tr>
+      <tr><td>cap</td><td>100</td><td>拠点ストック/製造・輸送フローの最大キャパシティ</td></tr>
+      <tr><td>allowOver</td><td>true</td><td>キャパシティ超過を許容する/しない（true/false）</td></tr>
+      <tr><td>unitCosts</td><td>"Hold:Store": 2</td><td>在庫/輸送/生産等の費用（Fixed:XXは固定費、他は変動費）</td></tr>
+      <tr><td>sellPrice</td><td>200</td><td>販売単価</td></tr>
+      <tr><td>demand.mean</td><td>30</td><td>平均需要</td></tr>
+      <tr><td>service.cycleSL</td><td>0.95</td><td>サービス率（Cycle-SL）</td></tr>
+    </table>
+
+    <h2>4. KPI解説・シナリオ検討のヒント</h2>
+    <ul>
+      <li><b>利益（NCF, ABP）</b>：販売利益・原価・在庫費用など全体収支を確認します。</li>
+      <li><b>サービスレベル</b>：需要に対しどれだけ欠品なく供給できたか（充足率）。設定や在庫量で変動します。</li>
+      <li><b>在庫日数／キャパ利用率</b>：過剰・過小の発見、ボトルネック特定、在庫回転の改善指標です。</li>
+      <li><b>シナリオ検討のヒント</b>：サプライチェーンの制約問題や不確実性の実情を想定し、キャパ／リードタイムや各種コスト、売価・サービス率等を調整した上で、実行を繰り返してKPIの変動を観察してください。</li>
+    </ul>
+    <div style="background:#f4faff;border-left:4px solid #4ba3ff;padding:8px 14px;margin:16px 0 8px 0;">
+      <b>Tips:</b>
+      <ul style="margin:0 0 0 18px;">
+        <li>設定JSONの書き換えで、サプライチェーンの制約・条件を自由に変えての実験が可能です。トライ&エラーでSCM構造の変化と数値に与える影響の感覚が掴めます。</li>
+        <li>各タブの内容はスクロール可能です。ダッシュボードもKPI全体と個別チャートを行き来でき、1日の進行による見たい変化を捉えられます。</li>
+        <li>もし、PSIの不整合（在庫と入出荷の出入りや、リードタイムが合わない等）が発生した場合は、アラートで警告が表示されます。</li>
+      </ul>
+    </div>
+
+    <h2>5. FAQ・トラブルシューティング</h2>
+    <ul>
+      <li><b>Q: 表やグラフが更新されない</b><br>
+        → A: ブラウザをリロード／正しい設定JSONの再適用後にやり直してください。
+      </li>
+      <li><b>Q: 設定を大きく変えたら挙動がおかしい</b><br>
+        → A: 設定JSONにミスがないか確認して下さい。ミスが見つからなければ、リロード／初期値に戻した上で、改めて設定変更を適用して下さい。</li>
+      <li><b>Q: 意味の分からないエラーや在庫数の不整合</b><br>
+        → A: 設定JSONのリードタイムやキャパシティ・フロー制約・ロットなどが矛盾していないか、見直してください。PSI不整合アラートが出ていれば、原因特定の手掛りとなり得ます。</li>
+    </ul>
+
+    <hr style="margin:30px 0 10px 0;">
+    <div style="color:#888;font-size:0.97em;">
+      <b>特記事項：</b><br>
+      <ul>
+        <li>本シミュレータは、著作権・著作者人格権が放棄されています。</li>
+        <li>本シミュレータは、より良いサプライチェーン教育に向けて適宜アップデートされますが、動作品質が保証されるものではありません。発生し得るいかなる損害へも自己責任による対応を前提とし、ご利用をお願いします。</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
