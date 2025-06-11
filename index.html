@@ -372,8 +372,8 @@ let manualFlowRequest = {
 ===================================================================================================== */
 let turnCostAcc = null;
 
-const addCost = (o, amt, label) => {
-  o.costs.push({ amount: amt, label });
+const addCost = (o, amt, label, costTurn) => {
+  o.costs.push({ amount: amt, label, turn:costTurn });
   if (turnCostAcc) {
     turnCostAcc[label] = (turnCostAcc[label] || 0) + amt;
   }
@@ -525,7 +525,7 @@ const cumOrderInterval = stage => {
 ===================================================================================================== */
 /*──────────────────── 0. コスト mix-in ─────────────────────*/
 const CostMixin = Base => class extends Base{
-  addUnit(label,qty=1){ addCost(this,(config.unitCosts[label]||0)*qty,label); }
+  addUnit(label,qty=1){ addCost(this,(config.unitCosts[label]||0)*qty,label,turn); }
 };
 
 /*──────────────────── 1. 基底エンティティ ───────────────────*/
@@ -557,19 +557,19 @@ class Stock{
   add(p){ this.inv.push(p); }
   remove(n){ return this.inv.splice(0,n); }
   count(){ return this.inv.length; }
-  holdTick(){
+  holdTick(turn){
     this.inv.forEach((p,i)=>{
-      addCost(p,i>=this.cap?this.hEx:this.h,i>=this.cap?`HoldEx:${this.id}`:`Hold:${this.id}`);
+      addCost(p,i>=this.cap?this.hEx:this.h,i>=this.cap?`HoldEx:${this.id}`:`Hold:${this.id}`, turn);
       if(this.id==="Raw")       p.rawDays++;
       if(this.id==="Factory")   p.factoryDays++;
       if(this.id==="Warehouse") p.warehouseDays++;
       if(this.id==="Store")     p.storeDays++;
     });
   }
-  applyFixed() {
+  applyFixed(turn) {
     const n = this.inv.length;
     const per = n ? this.f / n : 0;
-    this.inv.forEach(p => p.costs.push({amount: per, label: `Fixed:${this.id}`}));
+    this.inv.forEach(p => p.costs.push({amount: per, label: `Fixed:${this.id}`, turn}));
     if (turnCostAcc) turnCostAcc[`Fixed:${this.id}`] = (turnCostAcc[`Fixed:${this.id}`] || 0) + this.f;
   }
 }
@@ -585,10 +585,10 @@ class FlowBase{
     this.interval=this.orderInterval||1;
     this.timer=0;
   }
-  applyFixed() {
+  applyFixed(turn) {
     const n = this.queue.length;
     const per = n ? this.f / n : 0;
-    this.queue.forEach(q => q.item.costs.push({amount: per, label: `Fixed:${this.id}`}));
+    this.queue.forEach(q => q.item.costs.push({amount: per, label: `Fixed:${this.id}`, turn}));
     if (turnCostAcc) turnCostAcc[`Fixed:${this.id}`] = (turnCostAcc[`Fixed:${this.id}`] || 0) + this.f;
   }
   tick(){
@@ -622,7 +622,7 @@ class RawPrc extends FlowBase {
     for (let i = 0; i < q; i++) {
 
       const m = new RawMat();
-      addCost(m, this.v, "RawMat");
+      addCost(m, this.v, "RawMat", turn);
 
       if (this.leadTime === 0) {
         this.dest.add(m);
@@ -660,7 +660,7 @@ class Manufg extends FlowBase {
       const per = [];
       mats.forEach(m =>
         m.costs.forEach(c =>
-          per.push({ amount: c.amount / this.prdPerMat, label: c.label })));
+          per.push({ amount: c.amount / this.prdPerMat, label: c.label, turn: c.turn })));
 
       /* 製品を作る --------------------------------- */
       for (let j = 0; j < this.prdPerMat && produced < qty; j++) {
@@ -668,7 +668,7 @@ class Manufg extends FlowBase {
         p.materials.push(...mats.map(m => m.id));
         p.rawDays = mats.reduce((s, m) => s + (m.rawDays || 0), 0);
         per.forEach(c => p.costs.push({ ...c }));
-        addCost(p, this.v, "Manufg");
+        addCost(p, this.v, "Manufg", turn);
         produced++;
 
         /* leadTime==0: 直接 Factory 在庫へ ------------ */
@@ -705,7 +705,7 @@ function initInv() {
   // Raw
   for (let i = 0; i < config.stock.Raw.initial; i++) {
     const m = new RawMat();
-    addCost(m, config.unitCosts.RawMat, "RawMat");
+    addCost(m, config.unitCosts.RawMat, "RawMat", 0);
     sp.Raw.add(m);
   }
 
@@ -713,36 +713,36 @@ function initInv() {
   for (let i = 0; i < config.stock.Factory.initial; i++) {
     // ダミーRawMatを作り材料IDを登録
     const m = new RawMat();
-    addCost(m, config.unitCosts.RawMat, "RawMat");
+    addCost(m, config.unitCosts.RawMat, "RawMat", 0);
     const p = new Product();
     p.materials.push(m.id);
-    addCost(p, matCostPerProduct, "RawMat");
-    addCost(p, config.unitCosts.ManufgEx, "ManufgEx");
+    addCost(p, matCostPerProduct, "RawMat", 0);
+    addCost(p, config.unitCosts.ManufgEx, "ManufgEx", 0);
     sp.Factory.add(p);
   }
 
   // Warehouse
   for (let i = 0; i < config.stock.Warehouse.initial; i++) {
     const m = new RawMat();
-    addCost(m, config.unitCosts.RawMat, "RawMat");
+    addCost(m, config.unitCosts.RawMat, "RawMat", 0);
     const p = new Product();
     p.materials.push(m.id);
-    addCost(p, matCostPerProduct, "RawMat");
-    addCost(p, config.unitCosts.ManufgEx, "ManufgEx");
-    addCost(p, config.unitCosts["TransEx:F2W"], "TransEx:F2W");
+    addCost(p, matCostPerProduct, "RawMat", 0);
+    addCost(p, config.unitCosts.ManufgEx, "ManufgEx", 0);
+    addCost(p, config.unitCosts["TransEx:F2W"], "TransEx:F2W",0);
     sp.Warehouse.add(p);
   }
 
   // Store
   for (let i = 0; i < config.stock.Store.initial; i++) {
     const m = new RawMat();
-    addCost(m, config.unitCosts.RawMat, "RawMat");
+    addCost(m, config.unitCosts.RawMat, "RawMat", 0);
     const p = new Product();
     p.materials.push(m.id);
-    addCost(p, matCostPerProduct, "RawMat");
-    addCost(p, config.unitCosts.ManufgEx, "ManufgEx");
-    addCost(p, config.unitCosts["TransEx:F2W"], "TransEx:F2W");
-    addCost(p, config.unitCosts["TransEx:W2S"], "TransEx:W2S");
+    addCost(p, matCostPerProduct, "RawMat", 0);
+    addCost(p, config.unitCosts.ManufgEx, "ManufgEx", 0);
+    addCost(p, config.unitCosts["TransEx:F2W"], "TransEx:F2W", 0);
+    addCost(p, config.unitCosts["TransEx:W2S"], "TransEx:W2S", 0);
     sp.Store.add(p);
   }
 }
@@ -853,7 +853,7 @@ function shipItems(from, toFlow, dest, qty) {
       const over   = i >= toFlow.cap;
       const label  = over ? `TransEx:${toFlow.id}` : `Trans:${toFlow.id}`;
       const amount = over ? toFlow.vEx            : toFlow.v;
-      addCost(it, amount, label);
+      addCost(it, amount, label, turn);
       if (turnCostAcc) turnCostAcc[label] = (turnCostAcc[label] || 0) + amount;
 
       // 着荷
@@ -866,7 +866,7 @@ function shipItems(from, toFlow, dest, qty) {
     const over   = idx >= toFlow.cap;
     const label  = over ? `TransEx:${toFlow.id}` : `Trans:${toFlow.id}`;
     const amount = over ? toFlow.vEx            : toFlow.v;
-    addCost(it, amount, label);
+    addCost(it, amount, label, turn);
     if (turnCostAcc) turnCostAcc[label] = (turnCostAcc[label] || 0) + amount;
 
     toFlow.queue.push({ item: it, rem: toFlow.leadTime });
@@ -1119,9 +1119,9 @@ function runTurn() {
 
 /*──────────────────── H. コスト計算 ────────────────────*/
 function calcTurnCost(soldList,shortage){
-  [sp.Raw,sp.Factory,sp.Warehouse,sp.Store].forEach(st=>st.holdTick());
-  [flows.RawPrc,flows.Manufg,flows.F2W,flows.W2S].forEach(fl=>fl.applyFixed());
-  [sp.Raw,sp.Factory,sp.Warehouse,sp.Store].forEach(st=>st.applyFixed());
+  [sp.Raw,sp.Factory,sp.Warehouse,sp.Store].forEach(st=>st.holdTick(turn));
+  [flows.RawPrc,flows.Manufg,flows.F2W,flows.W2S].forEach(fl=>fl.applyFixed(turn));
+  [sp.Raw,sp.Factory,sp.Warehouse,sp.Store].forEach(st=>st.applyFixed(turn));
 
   if(shortage){
     turnCostAcc.Shortage=(turnCostAcc.Shortage||0)+shortage*config.unitCosts.Shortage;
@@ -1357,7 +1357,7 @@ function calcTotalStock(p) {
         pad(config.sellPrice,2),pad(cost,2),pad(config.sellPrice-cost,2),
         p.rawDays||0,p.factoryDays||0,p.warehouseDays||0,p.storeDays||0,
         (p.materials||[]).join(", "),
-        p.costs.map(c=>`${c.label}:${pad(c.amount,2)}`).join(", ")
+        p.costs.map(c=>`[${c.turn}]${c.label}:${pad(c.amount,2)}`).join(", ")
       ];
     });
     document.getElementById("products").innerHTML =
