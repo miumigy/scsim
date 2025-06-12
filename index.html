@@ -170,6 +170,11 @@
 <div id="products"  class="tab"></div>
 <div id="help" class="tab">
   <div style="max-width:750px;margin:0 auto;padding:24px 8px 32px 16px;text-align:left;line-height:1.75;">
+<div id="help-lang-switch" style="text-align:right; margin-bottom: 10px;">
+  <button id="help-ja-btn" style="margin-right: 8px; font-weight:bold;">日本語</button>
+  <button id="help-en-btn">English</button>
+</div>
+<div id="help-content-ja" style="display:block; text-align:left;">
     <h2 style="text-align:center;">ヘルプ／ユーザーガイド</h2>
     <h2>1. 概要</h2>
     <p>
@@ -256,7 +261,89 @@
     </div>
   </div>
 </div>
-
+<div id="help-content-en" style="display:none; text-align:left;">
+  <h2 style="text-align:center;">Help / User Guide</h2>
+  <h2>1. Overview</h2>
+  <p>
+    This web app simulates the <b>basic structure of a supply chain</b>—procurement, production, logistics, and sales—making <b>key SCM KPIs</b> such as cost and service level visible. It is designed as a learning tool to understand their inter-relationships.
+    <br>It is mainly intended for introductory training in SCM reform and supply chain digital transformation.
+  </p>
+  <h2>2. Main Features</h2>
+  <table style="font-size:1em;margin-bottom:1em;">
+    <tr><th style="min-width:110px;text-align:left;">Tab</th><th>Summary</th></tr>
+    <tr><td><b>Animation</b></td><td>3D dynamic visualization of the supply chain flow</td></tr>
+    <tr><td><b>Dashboard</b></td><td>Key KPIs (profit, inventory days, capacity rate, etc.) displayed and visualized as various charts</td></tr>
+    <tr><td><b>PSI Table</b></td><td>Daily view of inventory, input, and output at each site</td></tr>
+    <tr><td><b>CF Log</b></td><td>Cash flow, sales, and cost trends over time</td></tr>
+    <tr><td><b>ABC Log(d/Prd)</b></td><td>Daily activity-based cost, profit, and cost ratio per product</td></tr>
+    <tr><td><b>ABC Log(ID)</b></td><td>Detailed cost history by product ID</td></tr>
+    <tr><td><b>Help</b></td><td>This document</td></tr>
+  </table>
+  <h2>3. How to Use</h2>
+  <h3>3.1 Simulation Progress</h3>
+  <ul>
+    <li><b>1 Day Progress</b> button: Advances the simulation by one day, recalculates, and updates the animation, dashboard, and tables.</li>
+    <li><b>Configuration Editor</b>: Toggle parameter editing (capacity, cost, lead time, etc.) with "▼ Display Config". Directly edit in JSON format and apply by clicking "Update Config & Reset" to restart from Day 1.</li>
+    <li><b>Auto Flow/Manual</b> mode: "Auto Flow" enables automatic optimal ordering (multi-echelon pull system); "Manual" allows direct input for each flow's shipment and production quantities.</li>
+  </ul>
+  <h3>3.2 Screen Reference</h3>
+  <ul>
+    <li><b>Animation</b>: Intuitively capture inventory, bottlenecks, shortages, etc.</li>
+    <li><b>Dashboard</b>: Visually track KPI status and trends (profit, service level, inventory, capacity utilization, etc.).</li>
+    <li><b>PSI Table</b>: Monitor daily PSI balances and check inventory surpluses/shortages, in/out flows, etc.</li>
+    <li><b>CF/ABC Log</b>: Analyze cash flow details and profitability per day/product ID as needed.</li>
+  </ul>
+  <h3>3.3 Frequently Used Config Items</h3>
+  <table style="font-size:0.98em;">
+    <tr><th>Name</th><th>Example</th><th>Description</th></tr>
+    <tr><td>demand.mean</td><td>25</td><td>Mean demand μ</td></tr>
+    <tr><td>demand.cv</td><td>0.5</td><td>Coefficient of variation (σ÷μ)</td></tr>
+    <tr><td>service.mode</td><td>cycle/fill</td><td>Service level mode (cycle/fill-rate)</td></tr>
+    <tr><td>service.cycleSL</td><td>0.95</td><td>Cycle service level (α-SL)</td></tr>
+    <tr><td>leadTime</td><td>3</td><td>Lead time (days)</td></tr>
+    <tr><td>orderInterval</td><td>3</td><td>Order interval (days)</td></tr>
+    <tr><td>cap</td><td>100</td><td>Max capacity at each stock/flow point</td></tr>
+    <tr><td>stock.Xx.initial</td><td>100</td><td>Initial inventory</td></tr>
+    <tr><td>allowOver</td><td>true/false</td><td>Allow capacity overrun</td></tr>
+    <tr><td>push.xxToXx</td><td>true/false</td><td>Push flow downstream when overstocked</td></tr>
+    <tr><td>sellPrice</td><td>200</td><td>Selling price per unit</td></tr>
+    <tr><td>unitCosts</td><td>"Hold:Store": 2</td><td>Holding/transport/manufacturing costs (Fixed:XX = fixed, others = variable)</td></tr>
+  </table>
+  <h2>4. KPI Explanations & Simulation Scenario Tips</h2>
+  <ul>
+    <li><b>Profit (NCF, ABP)</b>: Check total cash flow (sales profit, cost, holding cost, etc.).</li>
+    <li><b>Service Level</b>: Percentage of demand met without shortage. Changes depending on settings and inventory.</li>
+    <li><b>Inventory Days / Capacity Utilization</b>: Identify excess/shortage, bottlenecks, and improve inventory turnover.</li>
+    <li><b>Scenario Tips</b>: Experiment with constraints and uncertainties (capacity, lead time, costs, price, service level, etc.) and observe KPI changes through repeated runs.</li>
+  </ul>
+  <div style="background:#f4faff;border-left:4px solid #4ba3ff;padding:8px 14px;margin:16px 0 8px 0;">
+    <b>Tips:</b>
+    <ul style="margin:0 0 0 18px;">
+      <li>By editing the configuration JSON, you can freely experiment with supply chain constraints and see how structural changes affect KPIs.</li>
+      <li>Each tab is scrollable. The dashboard allows you to switch between overall KPIs and individual charts, letting you track daily progress and changes.</li>
+      <li>If a PSI inconsistency (e.g. inventory and in/out not matching, lead times not aligning) occurs, an alert will be displayed.</li>
+    </ul>
+  </div>
+  <h2>5. FAQ / Troubleshooting</h2>
+  <ul>
+    <li><b>Q: Table or charts do not update</b><br>
+      → A: Try reloading the browser or reapplying a correct config JSON, then retry.
+    </li>
+    <li><b>Q: Simulation behaves oddly after major config changes</b><br>
+      → A: Check for mistakes in the config JSON. If not found, reload/reset to initial values, then apply changes again.
+    </li>
+    <li><b>Q: Unexplained errors or inventory inconsistencies</b><br>
+      → A: Review lead time, capacity, flow constraints, lot size, etc. in config JSON for contradictions. PSI inconsistency alerts can help pinpoint issues.</li>
+  </ul>
+  <hr style="margin:30px 0 10px 0;">
+  <div style="color:#888;font-size:0.97em;">
+    <b>Notes:</b><br>
+    <ul>
+      <li>This simulator will be updated for better supply chain education, but stable operation is not guaranteed.</li>
+      <li>Any loss or damage arising from the use of this simulator is your own responsibility.</li>
+    </ul>
+  </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -296,6 +383,25 @@ btnCfgToggle.onclick = function() {
 };
 
 buildSimulation();updateTables();setTimeout(renderPSIAnimation,100);
+});
+
+document.addEventListener("DOMContentLoaded", function() {
+  const jaBtn = document.getElementById('help-ja-btn');
+  const enBtn = document.getElementById('help-en-btn');
+  const helpJa = document.getElementById('help-content-ja');
+  const helpEn = document.getElementById('help-content-en');
+  jaBtn.onclick = function() {
+    helpJa.style.display = "block";
+    helpEn.style.display = "none";
+    jaBtn.style.fontWeight = "bold";
+    enBtn.style.fontWeight = "normal";
+  };
+  enBtn.onclick = function() {
+    helpJa.style.display = "none";
+    helpEn.style.display = "block";
+    enBtn.style.fontWeight = "bold";
+    jaBtn.style.fontWeight = "normal";
+  };
 });
 
 /* =====================================================================================================
