@@ -1308,18 +1308,18 @@ function calcTotalStock(p) {
     const rows = [moving];
     doCostsByTurn.forEach(d => {
       const soldTurn = soldProducts.filter(p => p.turn === d.turn);
-      rows.push(buildSummaryRow(""+d.turn, soldTurn, lbls, d.sold));
+      rows.push(buildSummaryRow("" + d.turn, soldTurn, lbls, d.sold));
     });
 
     const head = ["Day", "Sale Qty", ...lbls, ...stays, "ABC", "Price", "Profit"];
     document.getElementById("summary").innerHTML =
-    "<h2>Activity Based Cost Log by Day, per Product</h2>" + buildTable(head, rows);
+      "<h2>Activity Based Cost Log by Day, per Product</h2>" + buildTable(head, rows);
 
     ScrollKeeper.restore("summary");
   }
 
   function buildSummaryRow(label, soldArr, lbls, qtyOverride, windowLen) {
-    let isMovingAvg = label.startsWith("Mov");
+    let isMovingAvg = label.startsWith("MA");
     let saleQty = isMovingAvg && windowLen ? soldArr.length / windowLen : soldArr.length;
 
     const perUnitDiv = soldArr.length || 1;
