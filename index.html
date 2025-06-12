@@ -126,6 +126,9 @@
     overflow-y: auto;
     padding-bottom: 16px;
   }
+  .td-left {
+    text-align: left;
+  }
 </style>
 </head>
 <body>
@@ -1458,12 +1461,15 @@ function calcTotalStock(p) {
                 "RawMat ID","Activity Based Cost Detail"];
     const rows = soldProducts.map(p=>{
       const cost = p.total();
+      const detail = `<span class="td-left">${p.costs.map(c=>`[${c.turn}]${c.label}:${pad(c.amount,2)}`).join(", ")}</span>`;
       return [
         p.turn,p.id,
-        pad(config.sellPrice,2),pad(cost,2),pad(config.sellPrice-cost,2),
-        p.rawDays||0,p.factoryDays||0,p.warehouseDays||0,p.storeDays||0,
+        pad(config.sellPrice,2),
+        pad(cost,2), pad(config.sellPrice-cost,2),
+        p.rawDays||0, p.factoryDays||0,
+        p.warehouseDays||0,p.storeDays||0,
         (p.materials||[]).join(", "),
-        p.costs.map(c=>`[${c.turn}]${c.label}:${pad(c.amount,2)}`).join(", ")
+        detail
       ];
     });
     document.getElementById("products").innerHTML =
@@ -1576,16 +1582,24 @@ function calcTotalStock(p) {
     const revenue = turnObj ? turnObj.revenue
       : isAvg ? sum(turns.map(t => t.revenue)) / Math.max(turns.length, 1)
       : qty * config.sellPrice;
-  const profit = revenue - costTotal;
-  const invSell = turnObj ? turnObj.invSell
+    const profit = revenue - costTotal;
+    const invSell = turnObj ? turnObj.invSell
       : isAvg ? sum(turns.map(t => t.invSell)) / Math.max(turns.length, 1)
       : 0;
 
+    function fmt(v, d = 0) {
+      if (!Number.isFinite(v)) return "";
+      return Number(v.toFixed(d)).toLocaleString();
+    }
+
     return [
       label,
-      isAvg ? qty.toFixed(1) : pad(qty, 0),
-      ...costs.map(v => pad(v, 0)),
-      pad(costTotal, 0), pad(revenue, 0), pad(profit, 0), pad(invSell, 0)
+      isAvg ? qty.toFixed(1) : fmt(qty, 0),
+      ...costs.map(v => fmt(v, 0)),
+      fmt(costTotal, 0),
+      fmt(revenue, 0),
+      fmt(profit, 0),
+      fmt(invSell, 0)
     ];
   }
 
