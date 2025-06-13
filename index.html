@@ -1438,7 +1438,7 @@ function calcTotalStock(p) {
     const stay = s => perUnitDiv ? sum(soldArr.map(p => p[stayKey(s)] || 0)) / perUnitDiv : 0;
     const unitCost = sum(lbls.map(k => objCost[k]));
     const revenue = config.sellPrice;
-  let profit = (label == "0" || label == 0) ? 0 : revenue - unitCost;
+    let profit = (label == "0" || label == 0) ? 0 : revenue - unitCost;
 
     return [
       label,
