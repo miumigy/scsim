@@ -425,10 +425,10 @@ const config = {
     fillTarget : 0.95       //  βサービス率 (= Fill-rate)
   },
   flow: {
-    RawPrc:    { cap: 100, leadTime: 5, orderInterval: 5, allowOver: true, lot: 50 },
-    Manufg:    { cap: 100, leadTime: 3, orderInterval: 3, allowOver: true, lot: 50, matPerPrd: 1, prdPerMat: 2 },
-    F2W:       { cap: 100, leadTime: 2, orderInterval: 2, allowOver: true  },
-    W2S:       { cap:  50, leadTime: 1, orderInterval: 1, allowOver: false }
+    RawPrc:    { cap: 100, leadTime: 5, orderInterval: 5, allowOver: true, fixedCostIfNoOrder: true, lot: 50 },
+    Manufg:    { cap: 100, leadTime: 3, orderInterval: 3, allowOver: true, fixedCostIfNoOrder: true, lot: 50, matPerPrd: 1, prdPerMat: 2 },
+    F2W:       { cap: 100, leadTime: 2, orderInterval: 2, allowOver: true, fixedCostIfNoOrder: true },
+    W2S:       { cap:  50, leadTime: 1, orderInterval: 1, allowOver: false, fixedCostIfNoOrder: true }
   },
   stock: {
     Raw:       { cap: 100, initial:  50, allowOver: true },
@@ -693,8 +693,14 @@ class FlowBase{
     this.f = config.unitCosts["Fixed:"+id]||0;
     this.interval=this.orderInterval||1;
     this.timer=0;
+    this.fixedCostIfNoOrder = 
+      (typeof this.fixedCostIfNoOrder === 'boolean')
+        ? this.fixedCostIfNoOrder
+        : true;
+    this.lastIssued = false;
   }
   applyFixed(turn) {
+    if (!this.fixedCostIfNoOrder && !this.lastIssued) return;
     const n = this.queue.length;
     const per = n ? this.f / n : 0;
     this.queue.forEach(q => q.item.costs.push({amount: per, label: `Fixed:${this.id}`, turn}));
@@ -707,14 +713,15 @@ class FlowBase{
     if(this.dest) arrived.forEach(q=>this.dest.add(q.item));
     return arrived.length;
   }
-  issue(qty,enqueueFn){
+  issue(qty, enqueueFn){
     if(this.timer>0){
       if(qty>0 && this.id==="Manufg") this.timer = 0;
-      else { this.timer--; if(qty<=0) return 0; }
+      else { this.timer--; if(qty<=0) { this.lastIssued = false; return 0; } }
     }
-    if(qty<=0||this.timer>0) return 0;
+    if(qty<=0||this.timer>0) { this.lastIssued = false; return 0; }
     const done=enqueueFn(qty)||0;
     this.timer=this.interval-1;
+    this.lastIssued = done > 0;
     return done;
   }
 }
