@@ -38,7 +38,7 @@ This tool visualizes end-to-end supply chain flows, cost structures, and PSI (Pr
 
 ## License
 
-MIT License (see [LICENSE](./LICENSE) for details).
+MIT License.
 
 ---
 
