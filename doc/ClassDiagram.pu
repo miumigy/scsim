@@ -1,0 +1,73 @@
+@startuml
+'== エンティティ層 ==
+class Entity {
+  +id: string
+  +costs: array
+  +total(): number
+}
+Entity <|-- RawMat
+Entity <|-- Product
+
+class RawMat {
+  +rawDays: number
+}
+class Product {
+  +rawDays: number
+  +factoryDays: number
+  +warehouseDays: number
+  +storeDays: number
+  +materials: array
+}
+
+'== ストック層 ==
+class Stock {
+  +id: string
+  +inv: array
+  +cap: number
+  +add(p)
+  +remove(n)
+  +count()
+  +holdTick(turn)
+  +applyFixed(turn)
+}
+
+Stock "1" *-- "many" RawMat
+Stock "1" *-- "many" Product
+
+'== フロー層 ==
+class FlowBase {
+  +id: string
+  +dest: Stock
+  +cap: number
+  +queue: array
+  +leadTime: number
+  +issue(qty, enqueueFn)
+  +applyFixed(turn)
+  +tick()
+}
+FlowBase <|-- RawPrc
+FlowBase <|-- Manufg
+FlowBase <|-- Transport
+
+class RawPrc {
+  +enqueue(q)
+}
+class Manufg {
+  +raw: Stock
+  +enqueue(qty)
+}
+class Transport {}
+
+'== コストMixin ==
+class CostMixin
+CostMixin <|.. RawMat
+CostMixin <|.. Product
+
+'== 関係補足 ==
+RawPrc o-- Stock : dest
+Manufg o-- Stock : dest
+Manufg o-- Stock : raw
+Transport o-- Stock : from
+Transport o-- Stock : to
+
+@enduml
