@@ -23,20 +23,6 @@ This tool visualizes end-to-end supply chain flows, cost structures, and PSI (Pr
 5. **Analyze:** Use dashboards and tables to compare results, costs, and stock flows.
 6. **Export/Import:** Copy JSON config and results for further analysis or sharing.
 
-## Configuration Example
-
-The supply chain is configured in the `JSON Config Editor` section within the app UI:
-
-```json
-{
-  "products": [...],
-  "stocks": [...],
-  "flows": [...],
-  "costs": {...}
-}
-
-See in-app help for field descriptions.
-
 ## Architecture & Philosophy
 
 - **Transparency:** All cost and flow logic is visible and modifiable by users.
