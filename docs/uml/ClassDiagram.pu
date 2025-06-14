@@ -1,0 +1,73 @@
+@startuml
+'== Entity Layer ==
+class Entity {
+  +id: string
+  +costs: array
+  +total(): number
+}
+Entity <|-- RawMat
+Entity <|-- Product
+
+class RawMat {
+  +rawDays: number
+}
+class Product {
+  +rawDays: number
+  +factoryDays: number
+  +warehouseDays: number
+  +storeDays: number
+  +materials: array
+}
+
+'== Stock Layer ==
+class Stock {
+  +id: string
+  +inv: array
+  +cap: number
+  +add(p)
+  +remove(n)
+  +count()
+  +holdTick(turn)
+  +applyFixed(turn)
+}
+
+Stock "1" *-- "many" RawMat
+Stock "1" *-- "many" Product
+
+'== Flow Layer ==
+class FlowBase {
+  +id: string
+  +dest: Stock
+  +cap: number
+  +queue: array
+  +leadTime: number
+  +issue(qty, enqueueFn)
+  +applyFixed(turn)
+  +tick()
+}
+FlowBase <|-- RawPrc
+FlowBase <|-- Manufg
+FlowBase <|-- Transport
+
+class RawPrc {
+  +enqueue(q)
+}
+class Manufg {
+  +raw: Stock
+  +enqueue(qty)
+}
+class Transport {}
+
+'== Cost Mixin ==
+class CostMixin
+CostMixin <|.. RawMat
+CostMixin <|.. Product
+
+'== Relations ==
+RawPrc o-- Stock : dest
+Manufg o-- Stock : dest
+Manufg o-- Stock : raw
+Transport o-- Stock : from
+Transport o-- Stock : to
+
+@enduml
