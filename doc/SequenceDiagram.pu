@@ -1,0 +1,53 @@
+@startuml User_to_runTurn
+
+'====== レイアウト設定（任意） ==================================
+hide footbox
+skinparam participantPadding 20
+skinparam actorStyle awesome
+skinparam arrowThickness 1.2
+skinparam sequence {
+  LifeLineBorderColor #aaaaaa
+  LifeLineBorderThickness 1
+  LifeLineBackgroundColor #f8f8f8
+}
+'==============================================================
+
+actor User         as U             <<Human>>
+participant "UI (Browser)"          as UI
+participant "Simulator Core\n(runTurn)"  as Core
+participant "Flow / Stock\nManager" as FM
+participant "DOM Tables\n(updateTables)" as DOM
+participant "Animator\n(renderPSIAnimation)" as Ani
+participant "Dashboard\n(renderDashboard)"   as Dash
+participant "Chart.js"             as Chart
+participant "Three.js"             as Three
+
+'U ➜ UI --------------------------------------------------------
+U  -> UI : click **1 Day Progress**
+
+'UI ➜ Core -----------------------------------------------------
+UI -> Core : runTurn()
+activate Core
+
+'Core ➜ FlowManager (自動／手動プラン決定)
+Core -> FM : decidePlan()\n/ executeFlows(plan)
+FM   --> Core : plan executed
+
+'Core 内部処理（簡略化）
+Core -> Core : demandGen.gen()\ncalcTurnCost()
+
+'Core ➜ DOM 描画部
+Core -> DOM : updateTables()
+
+'Core ➜ Three.js アニメータ
+Core -> Ani : renderPSIAnimation()
+Ani  -> Three : redraw()
+
+'Core ➜ Dashboard
+Core -> Dash : renderDashboard()
+Dash -> Chart : drawCharts()
+
+deactivate Core
+UI <-- Core : (return)
+
+@enduml
