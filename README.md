@@ -1,7 +1,7 @@
-# Simple SCM Simulator
+# Simple Suppy Chain Simulator
 
-A self-contained, browser-based Supply Chain Management (SCM) simulator for educational and practical use.  
-This tool visualizes end-to-end supply chain flows, cost structures, and PSI (Production, Sales, Inventory) balance, helping users understand trade-offs and optimize decision-making.
+A self-contained, browser-based Supply Chain Simulator for educational and practical use.  
+This tool visualizes end-to-end supply chain flows, cost structures, and PSI (Production, Sales, Inventory) balance, helping users understand trade-offs and optimize decision-making in SCM.
 
 ## Features
 
