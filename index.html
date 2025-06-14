@@ -354,7 +354,7 @@
 "use strict";
 
 /* =====================================================================================================
-   0. UI 初期化
+   0. Initialize UI 
 ===================================================================================================== */
 document.addEventListener("DOMContentLoaded",()=>{
   document.getElementById("btn-run").onclick=()=>{
@@ -408,7 +408,7 @@ document.addEventListener("DOMContentLoaded", function() {
 });
 
 /* =====================================================================================================
-   1. 設定
+   1. Configration
 ===================================================================================================== */
 let turn=1;
 const doCostsByTurn=[],soldProducts=[],psiLog=[];
@@ -420,9 +420,9 @@ const config = {
     cv: 0.5
   },
   service : {
-    mode       : "fill",    //  "cycle" | "fill"
-    cycleSL    : 0.95,      //  αサービス率 (= Cycle-SL)
-    fillTarget : 0.95       //  βサービス率 (= Fill-rate)
+    mode       : "fill",    //  "cycle" or "fill"
+    cycleSL    : 0.95,      //  α Service Level (= Cycle-SL)
+    fillTarget : 0.95       //  β Service Level (= Fill-rate)
   },
   flow: {
     RawPrc:    { cap: 100, leadTime: 5, orderInterval: 5, allowOver: true,  fixedCostIfNoOrder: true,  lot: 50 },
@@ -477,7 +477,7 @@ let manualFlowRequest = {
   W2S: 0
 };
 /* =====================================================================================================
-   2. ユーティリティ
+   2. Utilities
 ===================================================================================================== */
 let turnCostAcc = null;
 
@@ -544,25 +544,25 @@ function physicalLT(stage) {
 }
 
 /* --------------------------------------------------------
- * 目標在庫量 (Base-stock level) を返す  
- *  ─ CycleStock : 平均需要 × 注文間隔  
- *  ─ SafetyStock: α-SL(cycle) or β-SL(Fill-Rate) を選択
+ * Caliculate Base-stock level
+ *  ─ CycleStock  : Demand mean × Order interval  
+ *  ─ SafetyStock : α-SL(cycle) or β-SL(Fill-Rate)
  ------------------------------------------------------- */
 function targetBaseStock(stage) {
 
-  /* ---------- 1) 需要平均 μ と 標準偏差 σ ---------- */
+  /* ---------- 1) Deman mean μ & STD σ ------------- */
   const μ = stage === "Raw"
           ? prodToRaw(config.demand.mean)
           : config.demand.mean;
   const σ = μ * (config.demand.cv || 0);
 
-  /* ---------- 2) サイクル在庫 (周期 × μ) ---------- */
+  /* ---------- 2) Cycle Stock (interval × μ) ------- */
   const ltPhys  = physicalLT(stage);
   const review  = getOrderInterval(stage) || 1;
   const cycleStock = μ * review;
   const ltEff   = Math.max(1, ltPhys);
 
-  /* ---------- 3) 安全在庫 ---------- */
+  /* ---------- 3) Safety Stock ----------------------- */
   const svc = config.service || {};
   const useFill = (svc.mode ?? "fill") === "fill";
   let safetyStock;
@@ -580,7 +580,7 @@ function targetBaseStock(stage) {
     safetyStock = ES / (1 - tgt);   // Kingman
   }
 
-  /* ---------- 4) 合算 & 整数化 ---------- */
+  /* ---------- 4) Summarize & Round ------------------ */
   return Math.round(cycleStock + Math.max(0, safetyStock));
 }
 
@@ -630,14 +630,14 @@ const cumOrderInterval = stage => {
 };
 
 /* =====================================================================================================
-   3. コアモデルクラス
+   3. Core Model Classes
 ===================================================================================================== */
-/*──────────────────── 0. コスト mix-in ─────────────────────*/
+/*──────────────────── 0. Cost mix-in ──────────────────────*/
 const CostMixin = Base => class extends Base{
   addUnit(label,qty=1){ addCost(this,(config.unitCosts[label]||0)*qty,label,turn); }
 };
 
-/*──────────────────── 1. 基底エンティティ ───────────────────*/
+/*──────────────────── 1. Base Entity ──────────────────────*/
 class Entity{
   constructor(pfx){
     this.id = pfx + String(++Entity.seq[pfx]).padStart(5,"0");
@@ -768,17 +768,17 @@ class Manufg extends FlowBase {
       if (!this.allowOver &&
           this.dest.count() + this.queue.length >= this.cap) break;
 
-      /* 材料取り出し ------------------------------- */
+      /* Pick raw material ------------------------------- */
       const mats = this.raw.remove(this.matPerPrd);
       consumed  += this.matPerPrd;
 
-      /* 材料コストを製品へ按分 ----------------------- */
+      /* Divide RM cost to Product ----------------------- */
       const per = [];
       mats.forEach(m =>
         m.costs.forEach(c =>
           per.push({ amount: c.amount / this.prdPerMat, label: c.label, turn: c.turn })));
 
-      /* 製品を作る --------------------------------- */
+      /* Production -------------------------------------- */
       for (let j = 0; j < this.prdPerMat && produced < qty; j++) {
         const p = new Product();
         p.materials.push(...mats.map(m => m.id));
@@ -787,7 +787,7 @@ class Manufg extends FlowBase {
         addCost(p, this.v, "Manufg", turn);
         produced++;
 
-        /* leadTime==0: 直接 Factory 在庫へ ------------ */
+        /* leadTime==0: immediate production ------------- */
         if (this.leadTime === 0) {
           this.dest.add(p);
         } else {
@@ -809,7 +809,7 @@ class Transport extends FlowBase{
 }
 
 /* =====================================================================================================
-   4. 初期在庫生成・シミュレーション構築
+   4. Generate initial inventory & Build simulation
 ===================================================================================================== */
 let sp, flows;
 
@@ -827,7 +827,7 @@ function initInv() {
 
   // Factory
   for (let i = 0; i < config.stock.Factory.initial; i++) {
-    // ダミーRawMatを作り材料IDを登録
+    // Generate dummy raw material
     const m = new RawMat();
     addCost(m, config.unitCosts.RawMat, "RawMat", 0);
     const p = new Product();
@@ -878,7 +878,7 @@ function buildSimulation() {
   };
   initInv();
 
-  // --- Day0: 初期在庫記録 ---
+  // --- Day0: record initial inventory ---
   const raw0   = sp.Raw.count(), fac0 = sp.Factory.count(), wh0 = sp.Warehouse.count(), st0 = sp.Store.count();
   psiLog.length = 0;
   psiLog.push({
@@ -921,7 +921,7 @@ function resetSimulation() {
     Object.keys(config).forEach(k => delete config[k]);
     Object.assign(config, newCfg);
   } catch (e) {
-    alert("JSON 解析エラー:\n" + e.message);
+    alert("JSON decoding error:\n" + e.message);
     return;
   }
   turn = 1;
@@ -930,15 +930,16 @@ function resetSimulation() {
   psiLog.length = 0;
   Entity.seq = { P: 0, M: 0 };
 
-  // lot, matPerPrd, prdPerMat など欠損にデフォルト値をセット
+  // Set default value to lot, matPerPrd, prdPerMat
   Object.keys(config.flow).forEach(k => {
-    config.flow[k].lot       = config.flow[k].lot       ?? 1;
-    config.flow[k].matPerPrd = config.flow[k].matPerPrd ?? 1;
-    config.flow[k].prdPerMat = config.flow[k].prdPerMat ?? 1;
-    config.flow[k].cap       = config.flow[k].cap       ?? 1;
-    config.flow[k].leadTime     = config.flow[k].leadTime     ?? 1;
-    config.flow[k].allowOver = config.flow[k].allowOver ?? true;
-    config.flow[k].orderInterval = config.flow[k].orderInterval ?? 1;
+    config.flow[k].lot                = config.flow[k].lot                ?? 1;
+    config.flow[k].matPerPrd          = config.flow[k].matPerPrd          ?? 1;
+    config.flow[k].prdPerMat          = config.flow[k].prdPerMat          ?? 1;
+    config.flow[k].cap                = config.flow[k].cap                ?? 1;
+    config.flow[k].leadTime           = config.flow[k].leadTime           ?? 1;
+    config.flow[k].allowOver          = config.flow[k].allowOver          ?? true;
+    config.flow[k].orderInterval      = config.flow[k].orderInterval      ?? 1;
+    config.flow[k].fixedCostIfNoOrder = config.flow[k].fixedCostIfNoOrder ?? true;
   });
 
   buildSimulation();
@@ -948,36 +949,33 @@ function resetSimulation() {
 
 
 /* =====================================================================================================
-   5. 出荷処理ヘルパ
+   5. Shipment helper
 ===================================================================================================== */
 function shipItems(from, toFlow, dest, qty) {
 
-  /* ── 受け側のキャパシティ制約 ───────────────────────── */
+  /* ── Reflect capacity constraint ──────────────────────── */
   if (!dest.allowOver) {
     const destAvail = dest.cap - dest.count() - toFlow.queue.length;
     qty = Math.max(0, Math.min(qty, destAvail));
   }
 
-  /* ── 実際に在庫を抜き出す ─────────────────────────── */
+  /* ── Pick inventory ────────────────────────────── */
   const items = from.remove(qty);
 
   items.forEach((it, i) => {
 
-    /* ===== leadTime == 0 ⇒ キューに積まず即着 ===== */
+    /* ===== leadTime == 0: immediate arrival ===== */
     if (toFlow.leadTime === 0) {
-      // 輸送コスト計上（Ex/通常の判定は「発送順」をそのまま使用）
       const over   = i >= toFlow.cap;
       const label  = over ? `TransEx:${toFlow.id}` : `Trans:${toFlow.id}`;
       const amount = over ? toFlow.vEx            : toFlow.v;
       addCost(it, amount, label, turn);
       if (turnCostAcc) turnCostAcc[label] = (turnCostAcc[label] || 0) + amount;
-
-      // 着荷
       dest.add(it);
       return;
     }
 
-    /* ===== リードタイム > 0 の出荷 ===== */
+    /* ===== leadTime > 0: regular shipment ===== */
     const idx    = toFlow.queue.length + i;
     const over   = idx >= toFlow.cap;
     const label  = over ? `TransEx:${toFlow.id}` : `Trans:${toFlow.id}`;
@@ -992,7 +990,7 @@ function shipItems(from, toFlow, dest, qty) {
 }
 
 /* =====================================================================================================
-   6. 需要計算ヘルパ
+   6. Demand calculation helper
 ===================================================================================================== */
 function mulberry32(a) {
   return function() {
@@ -1026,23 +1024,23 @@ const demandGen = {
 };
 
 /* =====================================================================================================
-   7. 需給実行
+   7. Execute supply and consumption
 ===================================================================================================== */
 
-/*──────────────────── A. 小さなヘルパ ────────────────────*/
+/*──────────────────── A. Small helpers ───────────────────*/
 const matPerPrd = ()=>config.flow.Manufg.matPerPrd||1;
 const prdPerMat = ()=>config.flow.Manufg.prdPerMat||1;
 const clamp  =(v,hi)=>Math.max(0,Math.min(v,hi));
 const lotRound=(q,id)=>roundLot(q,id);
 
-/*──────────────────── B. Pull 量計算 ────────────────────*/
+/*──────────────────── B. Calculate pull volume ───────────────*/
 function pullGap(stage,flowId){
   const target = targetBaseStock(stage);
   const gap    = Math.max(0, target - calcEchelonStock(stage));
   return ceilLot(gap,flowId);
 }
 
-/*──────────────────── C. Push 超過分加算 ──────────────────*/
+/*──────────────────── C. Add push ──────────────────────*/
 function addPush(plan){
   if(config.push.warehouseToStore){
     plan.wsShip += lotRound(Math.max(0,sp.Warehouse.count()-sp.Warehouse.cap),"W2S");
@@ -1058,17 +1056,17 @@ function addPush(plan){
   return plan;
 }
 
-/*──────────────────── D. キャパ／材料など制約でクリップ ──────────*/
+/*──────────────────── D. Clip by capacity, inventory ────────────*/
 function clipByConstraints(plan){
-  // 在庫実在量
+  // By inventory
   plan.wsShip = Math.min(plan.wsShip, sp.Warehouse.count());
   plan.fwShip = Math.min(plan.fwShip, sp.Factory.count());
 
-  // 材料由来上限
+  // By RM
   const maxMat = Math.floor(sp.Raw.count()/matPerPrd())*prdPerMat();
   plan.mfgQty = Math.min(plan.mfgQty, maxMat);
 
-  // allowOver==false のフロー上限
+  // allowOver==false
   [
     {id:"W2S", prop:"wsShip"},
     {id:"F2W", prop:"fwShip"},
@@ -1087,11 +1085,11 @@ function clipByConstraints(plan){
   return plan;
 }
 
-/*──────────────────── E. 自動プラン生成 decide() ─────────────*/
+/*──────────────────── E. Auto flow: decide() ────────────────*/
 function decide(){
   let plan = {
     rawOrder : pullGap("Raw"      ,"RawPrc"),
-    mfgQty  : pullGap("Factory"  ,"Manufg"),
+    mfgQty   : pullGap("Factory"  ,"Manufg"),
     fwShip   : pullGap("Warehouse","F2W"),
     wsShip   : pullGap("Store"    ,"W2S")
   };
@@ -1111,7 +1109,7 @@ function rawOrderNeededEchelon(plan){
   return ceilLot(gap, "RawPrc");
 }
 
-/*──────────────────── F. 手入力の補助整形 ──────────────────*/
+/*──────────────────── F. Manual plan ────────────────────*/
 function manualPlan(){
   const base = decide();
   const getVal = (k,flow)=>  (manualFlowRequest[flow]===""||manualFlowRequest[flow]==null)
@@ -1119,7 +1117,7 @@ function manualPlan(){
 
   let plan={
     rawOrder : getVal("rawOrder","RawPrc"),
-    mfgQty  : getVal("mfgQty" ,"Manufg"),
+    mfgQty   : getVal("mfgQty"  ,"Manufg"),
     fwShip   : getVal("fwShip"  ,"F2W"),
     wsShip   : getVal("wsShip"  ,"W2S")
   };
@@ -1131,14 +1129,14 @@ function runTurn() {
 
   turnCostAcc = {};
 
-  /* --- 0) 前在庫 snapshot --------------------------- */
+  /* --- 0) pre-process snapshot ------------------------ */
   const snap = () => ({
     R: sp.Raw.count(), F: sp.Factory.count(),
     W: sp.Warehouse.count(), S: sp.Store.count()
   });
   const before = snap();
 
-  /* --- 1) 到着処理（tick） --------------------------- */
+  /* --- 1) arrival(tick) ------------------------------- */
   const arrivals = {
     R: flows.RawPrc.tick(),
     F: flows.Manufg.tick(),
@@ -1146,17 +1144,17 @@ function runTurn() {
     S: flows.W2S.tick()
   };
 
-  /* --- 2) 発注プラン決定 ----------------------------- */
+  /* --- 2) decide order plan --------------------------- */
   const plan = (flowInputMode === "manual") ? manualPlan() : decide();
 
-  /* (Auto モード時は入力欄リセット) */
+  // reset input box
   if (flowInputMode === "auto") {
     manualFlowRequest = { RawPrc: 0, Manufg: 0, F2W: 0, W2S: 0 };
     ["inputRawPrc", "inputManufg", "inputF2W", "inputW2S"]
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = 0; });
   }
 
-  /* --- 3) フローへ投入 ------------------------------- */
+  /* --- 3) pass to flow -------------------------------- */
   let rawOrdered = 0, mfgStarted = 0, rawUsed = 0;
 
   const wsShip = flows.W2S.issue(plan.wsShip,
@@ -1175,28 +1173,28 @@ function runTurn() {
     return rawOrdered;
   });
 
-  /* --- 3.5) 即納分の補正 ----------------------------- */
-  const instantRaw = (flows.RawPrc.leadTime === 0) ? rawOrdered   : 0;
-  const instantFac = (flows.Manufg.leadTime  === 0) ? mfgStarted : 0;
-  const instantFW  = (flows.F2W.leadTime    === 0) ? fwShip      : 0;
-  const instantWS  = (flows.W2S.leadTime    === 0) ? wsShip      : 0;
+  /* --- 3.5) immediate arrival ------------------------- */
+  const instantRaw = (flows.RawPrc.leadTime === 0) ? rawOrdered : 0;
+  const instantFac = (flows.Manufg.leadTime === 0) ? mfgStarted : 0;
+  const instantFW  = (flows.F2W.leadTime    === 0) ? fwShip     : 0;
+  const instantWS  = (flows.W2S.leadTime    === 0) ? wsShip     : 0;
 
-  /* --- 4) 需要生成 & 販売 ---------------------------- */
+  /* --- 4) generate demand & sell ---------------------- */
   const demand   = demandGen.gen();
   const soldList = sp.Store.remove(Math.min(demand, sp.Store.count()));
   const soldQty  = soldList.length;
   const shortage = demand - soldQty;
   soldList.forEach(p => { p.turn = turn; soldProducts.push(p); });
 
-  /* --- 5) 後在庫 snapshot --------------------------- */
+  /* --- 5) post-process snapshot ----------------------- */
   const after = snap();
 
-  /* --- 6) PSI ログ ---------------------------------- */
+  /* --- 6) PSI log ------------------------------------- */
   psiLog.push({
     turn,
     rawOrdered, mfgStarted,
     rawInTransit: (flows.RawPrc.leadTime === 0) ? 0 : flows.RawPrc.queue.length,
-    facInTransit: (flows.Manufg.leadTime  === 0) ? 0 : flows.Manufg.queue.length,
+    facInTransit: (flows.Manufg.leadTime === 0) ? 0 : flows.Manufg.queue.length,
     fwInTransit : (flows.F2W.leadTime    === 0) ? 0 : flows.F2W.queue.length,
     wsInTransit : (flows.W2S.leadTime    === 0) ? 0 : flows.W2S.queue.length,
 
@@ -1224,16 +1222,16 @@ function runTurn() {
     forecast: config.demand.mean
   });
 
-  /* --- 7) コスト計算 -------------------------------- */
+  /* --- 7) cost caliculation ---------------------------- */
   calcTurnCost(soldList, shortage);
 
-  /* --- 8) UI 更新 ---------------------------------- */
+  /* --- 8) update UI ------------------------------------ */
   turn++;
   updateTables();
   checkPSIConsistency();
 }
 
-/*──────────────────── H. コスト計算 ────────────────────*/
+/*──────────────────── H. Caliculate cost ──────────────────*/
 function calcTurnCost(soldList,shortage){
   [sp.Raw,sp.Factory,sp.Warehouse,sp.Store].forEach(st=>st.holdTick(turn));
   [flows.RawPrc,flows.Manufg,flows.F2W,flows.W2S].forEach(fl=>fl.applyFixed(turn));
@@ -1262,7 +1260,7 @@ function calcTurnCost(soldList,shortage){
 }
 
 /* ========================================================================================================
-   8. PSI整合チェック
+   8. PSI consistency check
 ======================================================================================================== */
 
 function checkPSIConsistency() {
@@ -1272,7 +1270,7 @@ function checkPSIConsistency() {
   const e = [];
 
   /* ------------------------------------------------------------
-     1) 在庫勘定（Raw / Factory / Warehouse / Store）
+     1) Inventory check（Raw / Factory / Warehouse / Store）
   ------------------------------------------------------------ */
   if (p.raw.before + p.raw.produced - p.raw.consumed !== p.raw.after)
     e.push(`Raw   : ${p.raw.before}+${p.raw.produced}-${p.raw.consumed}≠${p.raw.after}`);
@@ -1287,8 +1285,7 @@ function checkPSIConsistency() {
     e.push(`Store: ${p.store.before}+${p.store.inflow}-${p.store.outflow}≠${p.store.after}`);
 
   /* ------------------------------------------------------------
-     2) フロー in-Transit 勘定
-        leadTime == 0 のフローは in-Transit が無いので対象外
+     2) In-Transit check
   ------------------------------------------------------------ */
   const flows = ["RawPrc", "Manufg", "F2W", "W2S"]
     .filter(f => (config.flow[f].leadTime || 0) > 0);
@@ -1300,32 +1297,31 @@ function checkPSIConsistency() {
     if (!pPrev) return;
 
     const issued =
-      f === "RawPrc" ? pNow.rawOrdered        :
-      f === "Manufg"  ? pNow.mfgStarted       :
-      f === "F2W"    ? pNow.factory.shipped   :
-                       pNow.warehouse.outflow;         // W2S
+      f === "RawPrc" ? pNow.rawOrdered       :
+      f === "Manufg" ? pNow.mfgStarted       :
+      f === "F2W"    ? pNow.factory.shipped  :
+                       pNow.warehouse.outflow;
 
     const key = (
       f === "RawPrc" ? "rawInTransit" :
-      f === "Manufg"  ? "facInTransit" :
+      f === "Manufg" ? "facInTransit" :
       f === "F2W"    ? "fwInTransit"  :
                        "wsInTransit"
     );
 
     const delta   = (pNow[key]  ?? 0) - (pPrev[key] ?? 0);
     const arrived =
-      f === "RawPrc" ? pNow.raw.produced       :
-      f === "Manufg"  ? pNow.factory.produced   :
-      f === "F2W"    ? pNow.warehouse.inflow   :
-                       pNow.store.inflow;              // W2S
+      f === "RawPrc" ? pNow.raw.produced      :
+      f === "Manufg" ? pNow.factory.produced  :
+      f === "F2W"    ? pNow.warehouse.inflow  :
+                       pNow.store.inflow      ;
 
     if (delta + arrived !== issued)
-      e.push(`${f}投入${issued} → ΔInTr${delta} + 到着${arrived} が一致しません`);
+      e.push(`${f}issued${issued} → ΔInTr${delta} + arrived${arrived} not equal`);
   });
 
   /* ------------------------------------------------------------
-     3) リードタイム後の到着チェック（leadTime ターン前投入＝今回到着）
-        こちらも leadTime==0 は除外
+     3) Arrival check after lead time
   ------------------------------------------------------------ */
 flows.forEach(f => {
   const leadTime = config.flow[f].leadTime || 1;
@@ -1334,23 +1330,22 @@ flows.forEach(f => {
   const pPast = psiLog.at(-1 - leadTime);
   const arrived =
     f === "RawPrc" ? p.raw.produced       :
-    f === "Manufg"  ? p.factory.produced   :
+    f === "Manufg" ? p.factory.produced   :
     f === "F2W"    ? p.warehouse.inflow   :
-                     p.store.inflow;                   // W2S
+                     p.store.inflow       ;
 
-  /* ---- Day0 には投入フィールドが無い → 0 扱いにする ---- */
   const issued =
     f === "RawPrc" ? (pPast.rawOrdered       || 0) :
-    f === "Manufg"  ? (pPast.mfgStarted      || 0) :
+    f === "Manufg" ? (pPast.mfgStarted       || 0) :
     f === "F2W"    ? (pPast.factory.shipped  || 0) :
-                     (pPast.warehouse.outflow|| 0);    // W2S
+                     (pPast.warehouse.outflow|| 0) ;
 
   if (arrived !== issued)
-    e.push(`${f}: ${leadTime}ターン前投入 ${issued} ⇔ 今回到着 ${arrived} の不整合`);
+    e.push(`${f}: issued ${issued} ${leadTime}days ago ⇔ this turn arrived ${arrived} inconsistent`);
 });
 
   /* ------------------------------------------------------------
-     4) 結果表示
+     4) Display alert
   ------------------------------------------------------------ */
   if (e.length) {
     const msg = `PSI inconsistent (Day ${p.turn}):\n` + e.join("\n");
@@ -1370,10 +1365,10 @@ function calcTotalStock(p) {
 }
 
 /* ========================================================================================================
-    9. ログ表・ダッシュボード描画
+    9. Render log tables & dashboard
 ======================================================================================================== */
 (() => {
-  /* ===== 0) 共通ユーティリティ ================================================================ */
+  /* ===== 0) Common Utilities ================================================================== */
   const uniq = a => [...new Set(a)];
   const sum  = a => a.reduce((p,c)=>p+c,0);
   const pad  = (v,d=2)=>Number.isFinite(v)?v.toFixed(d):v;
@@ -1388,7 +1383,7 @@ function calcTotalStock(p) {
     rows.map(r=>"<tr>"+r.map(c=>`<td>${c}</td>`).join("")+"</tr>").join("")+
     "</table></div>";
 
-  // stays: サマリーの滞留カラム
+  // Stays
   const stays = ["AvgStay:R","AvgStay:F","AvgStay:W","AvgStay:S"];
   const stayMap = {
     "AvgStay:R": "rawDays",
@@ -1398,7 +1393,7 @@ function calcTotalStock(p) {
   };
   const stayKey = s => stayMap[s];
 
-  // スクロール位置の保持
+  // Scloll Keeper
   const ScrollKeeper = {
     _scrollMap: {},
     save(tabId) {
@@ -1622,7 +1617,7 @@ function calcTotalStock(p) {
     ];
   }
 
-  /* ===== 5) Flow-mode / oninput ハンドラ ==================================================== */
+  /* ===== 5) Flow-mode / oninput handler ===================================================== */
   function attachFlowModeHandlers(){
     document.querySelectorAll('input[name="flowMode"]').forEach(r=>{
       r.onchange=e=>{
@@ -1645,32 +1640,30 @@ function calcTotalStock(p) {
     document.getElementById("inputW2S"   ).oninput = e=>manualFlowRequest.W2S = +e.target.value;
   }
 
-  /* ===== 6) 補助関数 ======================================================================== */
+  /* ===== 6) Support function ================================================================ */
   function movingWindow(n){
     const turns = doCostsByTurn.filter(d=>d.turn!==0).slice(-n).map(d=>d.turn);
     return { turns, sold: soldProducts.filter(p=>turns.includes(p.turn)) };
   }
 
-  /* ===== 7) ダッシュボード ================================================================== */
+  /* ===== 7) Dashboard ======================================================================= */
 function renderDashboard(windowSize = 10) {
   const mp = config.flow.Manufg.matPerPrd || 1;
   const pp = config.flow.Manufg.prdPerMat || 1;
   const asProd = (raw) => raw * (pp / mp);
 
-  // ==== 0. 累計・平均データ ====
+  // ==== 0. Total & Average data ====
   const currDay = turn > 0 ? turn - 1 : 0;
   const totalTurns = doCostsByTurn.filter(d => d.turn > 0).length;
   const totalSales = soldProducts.length;
   const totalDemand = psiLog.reduce((a, p) => a + (p.demand || 0), 0);
   const totalShortage = psiLog.reduce((a, p) => a + (p.shortage || 0), 0);
   const serviceLevel = totalDemand > 0 ? ((totalDemand - totalShortage) / totalDemand) : 0;
-
-  // 在庫数量・日数（パイプ分含む, Qty/Days同等ロジック）
   const sum = (arr) => arr.reduce((a, b) => a + b, 0);
   const psiFiltered = psiLog.filter(p => p.turn > 0);
   const safeDiv = (n, d) => d > 0 ? n / d : 0;
 
-  // NaN対策
+  // solve NaN
   const totalInvQty = ["raw", "factory", "warehouse", "store"].map((id) => {
     if (id === "raw")       return safeDiv(sum(psiFiltered.map(p => (p.raw?.after ?? 0) + (p.rawInTransit ?? 0))), totalTurns);
     if (id === "factory")   return safeDiv(sum(psiFiltered.map(p => (p.factory?.after ?? 0) + (p.facInTransit ?? 0))), totalTurns);
@@ -1679,7 +1672,7 @@ function renderDashboard(windowSize = 10) {
     return 0;
   });
 
-  // Inventory Days: パイプラインを含め、製品Qty換算で滞留日数手計算
+  // Inventory Days
   const calcInvDays = (keyAfter, keyTransit) => {
     const totalDays = psiFiltered.length;
     const totalStock = psiFiltered.reduce(
@@ -1697,7 +1690,7 @@ function renderDashboard(windowSize = 10) {
     calcInvDays("store",    "wsInTransit")
   ];
 
-  // キャパ占有率
+  // Capacity utilization
   const capFlow = ["RawPrc", "Manufg", "F2W", "W2S"].map(id => {
     let cap = config.flow[id].cap || 1;
     let total = psiFiltered.reduce((a, p) => {
@@ -1722,7 +1715,7 @@ function renderDashboard(windowSize = 10) {
     return cap > 0 && totalTurns > 0 ? total / (totalTurns * cap) : 0;
   });
 
-  // 利益・現金・機会損失
+  // Profit, Cash, Shortage loss
   const ncfSum = doCostsByTurn
     .filter(d => d.turn > 0)
     .reduce((a, d) => a + ((d.revenue ?? 0) - Object.values(d.actualCost || {}).reduce((x, y) => x + y, 0)), 0);
@@ -1731,13 +1724,13 @@ function renderDashboard(windowSize = 10) {
   const currInvPrice = doCostsByTurn.length > 0 ? (doCostsByTurn.at(-1)?.invSell ?? 0) : 0;
   const shortageLoss = totalShortage * (config.unitCosts?.Shortage ?? 0);
 
-  // NCF/ABP 利益率（Margin）計算
+  // NCF/ABP margin
   const totalRevenue = doCostsByTurn.filter(d => d.turn > 0).reduce((a, d) => a + (d.revenue ?? 0), 0);
   const ncfMargin = totalRevenue > 0 ? (ncfSum / totalRevenue) * 100 : 0;
   const abpMargin = totalRevenue > 0 ? (abpSum / totalRevenue) * 100 : 0;
 
-  // ==== 1. 表レイアウト生成 ====
-  // 1-a. Net Cash/Profit表（1段目にKPI追加、Service Level移動）
+  // ==== 1. Table layout ====
+  // 1-a. Net Cash/Profit table
   const t1 = `
     <table style="margin:0 auto 10px auto; width:100%; max-width:900px; font-size:1.1em; text-align:center;">
       <tr>
@@ -1762,7 +1755,7 @@ function renderDashboard(windowSize = 10) {
       </tr>
     </table>`;
 
-  // 1-b. Sale/Shortage + 在庫・日数表（Service Levelを削除）
+  // 1-b. Sale/Shortage + Inv days
   const t2 = `
     <table style="margin:0 auto 10px auto; width:100%; max-width:900px; font-size:1.05em; text-align:center;">
       <tr>
@@ -1783,7 +1776,7 @@ function renderDashboard(windowSize = 10) {
       </tr>
     </table>`;
 
-  // 1-c. Capacity Utilization表
+  // 1-c. Capacity Utilization table
   const t3 = `
     <table style="margin:0 auto 14px auto; width:100%; max-width:900px; font-size:1.05em; text-align:center;">
       <tr>
@@ -1800,7 +1793,7 @@ function renderDashboard(windowSize = 10) {
       </tr>
     </table>`;
 
-  // ==== 2. チャート・レイアウト ====
+  // ==== 2. Chart layout ====
   document.getElementById("dashboard").innerHTML = `
     <div style="font-weight:bold;font-size:1.15em;margin-bottom:2px;text-align:center;">
       <h3>Total Scores</h3>
@@ -1838,7 +1831,7 @@ function renderDashboard(windowSize = 10) {
     </div>
   `;
 
-    // ==== 3. チャート描画 ====
+    // ==== 3. Render charts ====
     const PSI  = psiLog        .filter(p => p.turn > 0).slice(-windowSize);
     const CF   = doCostsByTurn .filter(d => d.turn > 0).slice(-windowSize);
     const turns = PSI.map(p => p.turn);
@@ -2007,7 +2000,7 @@ function renderDashboard(windowSize = 10) {
       ctx:document.getElementById('chart-cf').getContext('2d')
     });
 
-    // 3-5. Activity Based Cost Ratio% ドーナツ
+    // 3-5. Activity Based Cost Ratio% donut
     const soldWin = soldProducts.filter(p => turns.includes(p.turn));
     const costAgg = {};
     soldWin.forEach(p =>
@@ -2075,7 +2068,7 @@ function renderDashboard(windowSize = 10) {
       ctx:document.getElementById('chart-profit-scatter').getContext('2d')
     });
 
-    // 3-7. 滞留日数レーダー
+    // 3-7. Stay days radar
     const stayKeys=['rawDays','factoryDays','warehouseDays','storeDays'];
     const stayVals=stayKeys.map(k=>avg(soldWin.map(p=>p[k]||0)));
     upsertChart('stayRadar',{
@@ -2097,7 +2090,7 @@ function renderDashboard(windowSize = 10) {
     });
   }
 
-  // 外部からもwindowSize指定で呼べるようエイリアス
+  // alias
   window.renderDashboard = renderDashboard;
 
   /* ===== 8) orchestrator ====================================================================== */
@@ -2116,7 +2109,7 @@ function renderDashboard(windowSize = 10) {
 updateTables();
 
 /* ========================================================================================================
-    10. アニメーション
+    10. Animation
 ======================================================================================================== */
 function createCustomer(){
   const g = new THREE.Group();
@@ -2145,9 +2138,9 @@ function createCustomer(){
 }
 
 class PSIAnimator {
-  /* ========== 1. 初期化 ========== */
+  /* ========== 1. Initialize ========== */
   constructor(canvasId = 'psiCanvas') {
-    /*** THREE.js 基本 ***/
+    /*** THREE.js base ***/
     const cvs     = document.getElementById(canvasId);
     this.w        = cvs.clientWidth  || 640;
     this.h        = cvs.clientHeight || 400;
@@ -2162,7 +2155,7 @@ class PSIAnimator {
     this.camera.position.set(0, 60, 125);
     this.camera.lookAt(0, 0, 0);
 
-    /*** 共通ジオメトリ / マテリアル ***/
+    /*** Common geometries & materials ***/
     const s     = 10 / 5;
     this.geo    = {
       cube  : new THREE.BoxGeometry(s, s, s),
@@ -2181,34 +2174,34 @@ class PSIAnimator {
       edge  : new THREE.LineBasicMaterial({color: 0x333333, linewidth: 2})
     };
 
-    /* シーンの“静的”要素は一度だけ生成 */
+    /* Static group */
     this.staticGroup = new THREE.Group();
     this.scene.add(this.staticGroup);
     this._buildStaticLayout();
 
-    /* “動的”メッシュ保持用 */
+    /* Dynamic mesh */
     this.dynamicGroup = new THREE.Group();
     this.scene.add(this.dynamicGroup);
 
-    /* 点滅制御 */
+    /* Blink */
     this.currentRem = [0, 0, 0, 0];
     this.lastBlink  = 0;                
     this.blinkIntv  = 500; // ms
 
-    /* ライト */
+    /* Light */
     this.scene.add(new THREE.AmbientLight(0xffffff, 1));
     const dir = new THREE.DirectionalLight(0xffffff, 1);
     dir.position.set(0, 50, 50); this.scene.add(dir);
 
-    /* render ループ開始 */
+    /* Start render loop */
     this.needRebuild = true;
     requestAnimationFrame(this._loop.bind(this));
   }
 
-  /* ========== 2. パブリック API ========== */
+  /* ========== 2. Public API ========== */
   markDirty() { this.needRebuild = true; this.lastBlink = -Infinity;}
 
-  /* ========== 3. メインループ ========== */
+  /* ========== 3. Main loop ========== */
   _loop(t) {
     if (this.needRebuild)     this._rebuildDynamicMeshes();
     if (t - this.lastBlink > this.blinkIntv) {
@@ -2220,9 +2213,8 @@ class PSIAnimator {
     requestAnimationFrame(this._loop.bind(this));
   }
 
-  /* ========== 4. シーン静的レイアウト ========== */
+  /* ========== 4. Static layout ========== */
   _buildStaticLayout() {
-    // 定数計算
     const s  = this.geo.cube.parameters.width;
     const sp = s * 1.1;
     const pg = this.pg = 50;
@@ -2237,7 +2229,7 @@ class PSIAnimator {
     this.flowZ = -sp * 7;
     const half = pg / 2;
 
-    // キャパシティ枠（Stock）
+    // Capacity box（Stock）
     ['Raw', 'Factory', 'Warehouse', 'Store'].forEach((k, i) => {
       const cap = config.stock[k].cap, layers = Math.ceil(cap / 25);
       if (!layers) return;
@@ -2248,7 +2240,7 @@ class PSIAnimator {
       this.staticGroup.add(box);
     });
 
-    // キャパシティ枠（Flow）
+    // Capacity box（Flow）
     ['RawPrc', 'Manufg', 'F2W', 'W2S'].forEach((k, idx) => {
       const cap = config.flow[k].cap, layers = Math.ceil(cap / 25);
       if (!layers) return;
@@ -2265,7 +2257,7 @@ class PSIAnimator {
       this.staticGroup.add(box);
     });
 
-    // 帯矢印（Pushは赤）
+    // Allows
     const mkArrow = (x0, x1, mat) => {
       const len = x1 - x0; if (len <= 0) return;
       const band = new THREE.Mesh(
@@ -2296,7 +2288,7 @@ class PSIAnimator {
       this.mat.arrow
     );
 
-    // 工場建屋枠
+    // Factory flame
     {
       const idx0 = 0, idx1 = 1; // Raw, Factory
       const xMin = this.pos[idx0] - 3.5 * sp;
@@ -2316,7 +2308,7 @@ class PSIAnimator {
       this.staticGroup.add(edgeLines);
     }
 
-    // 店舗屋根
+    // Store roof
     {
       const i = 3;
       const capQty    = config.stock.Store?.cap || 0;
@@ -2352,9 +2344,8 @@ class PSIAnimator {
     }
   }
 
-  /* ========== 5. Blink 用 step 更新 ========== */
+  /* ========== 5. Update step for blink ========== */
   _cycleBlinkStep() {
-    /* rem のユニーク昇順を保持して step を進める */
     const keys = ['RawPrc', 'Manufg', 'F2W', 'W2S'];
     keys.forEach((k, idx) => {
       const steps = [...new Set(flows[k].queue.filter(q=>q.rem>0).map(q=>q.rem))].sort((a,b)=>a-b);
@@ -2365,7 +2356,7 @@ class PSIAnimator {
     });
   }
 
-  /* ========== 6. Dynamic メッシュ再生成 ========== */
+  /* ========== 6. Rebuild dynamic mesh ========== */
   _rebuildDynamicMeshes() {
     this.needRebuild = false;
     this.dynamicGroup.clear();
@@ -2374,7 +2365,7 @@ class PSIAnimator {
     const sp    = s * 1.1;
     const capOv = (i, cap) => i >= cap ? 'O' : '';
 
-    /* --- 6-1. Stock 在庫 --- */
+    /* --- 6-1. Stock inventory --- */
     const stocks = [
       {key:'Raw',       qty: psiLog.at(-1).raw.after,       geo:'sphere'},
       {key:'Factory',   qty: psiLog.at(-1).factory.after,   geo:'cube'},
@@ -2394,7 +2385,7 @@ class PSIAnimator {
       }
     });
 
-    /* --- 6-2. Flow キュー（Blink step 反映） --- */
+    /* --- 6-2. Flow queue --- */
     const flowCfg = [
       {k:'RawPrc', x:this.pos[0]-this.pg/2,         geo:'sphere', idx:0},
       {k:'Manufg',   x:(this.pos[0]+this.pos[1])/2,   geo:'cube',   idx:1},
@@ -2429,7 +2420,7 @@ class PSIAnimator {
       }
     }
 
-    /* --- 6-4. Customer オブジェクト --- */
+    /* --- 6-4. Customer object --- */
     const cust = createCustomer();
     if (psiLog.at(-1).shortage) {
       cust.traverse(o=>o.material?.color?.set(0xff0000));
@@ -2439,7 +2430,7 @@ class PSIAnimator {
     this.dynamicGroup.add(cust);
   }
 
-    /* ========== 7. 静的レイアウトの再構築 ========== */
+    /* ========== 7. Rebuild static layout ========== */
     rebuildStaticLayout() {
     while (this.staticGroup.children.length > 0) {
       this.staticGroup.remove(this.staticGroup.children[0]);
@@ -2448,18 +2439,18 @@ class PSIAnimator {
   }
 }
 
-/* -------------- インスタンス生成と既存フック置換 ------------ */
+/* -------------- Generate instance ------------ */
 const animator = new PSIAnimator();
 function renderPSIAnimation(){ animator.markDirty(); }
 
-/* Day進行 */
+/* Proceed 1 day */
 const _origRunTurn   = runTurn;
 window.runTurn = function(){ _origRunTurn(); animator.markDirty(); };
 
 const _origResetSim  = resetSimulation;
 window.resetSimulation = function(){ _origResetSim(); animator.rebuildStaticLayout(); animator.markDirty();};
 
-/* タブ切替（animation タブ）時の再描画 */
+/* Re-render animation */
 document.querySelectorAll('.tab-btn').forEach(b=>{
   if (b.dataset.tab!=='animation') return;
   b.addEventListener('click',()=>animator.markDirty());
