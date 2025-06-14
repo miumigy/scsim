@@ -1,6 +1,6 @@
 @startuml User_to_runTurn
 
-'====== レイアウト設定（任意） ==================================
+'====== Layout Setting ========================================
 hide footbox
 skinparam participantPadding 20
 skinparam actorStyle awesome
@@ -29,17 +29,17 @@ U  -> UI : click **1 Day Progress**
 UI -> Core : runTurn()
 activate Core
 
-'Core ➜ FlowManager (自動／手動プラン決定)
+'Core ➜ FlowManager (Auto Flow/Manual)
 Core -> FM : decidePlan()\n/ executeFlows(plan)
 FM   --> Core : plan executed
 
-'Core 内部処理（簡略化）
+'Core Internal Process
 Core -> Core : demandGen.gen()\ncalcTurnCost()
 
-'Core ➜ DOM 描画部
+'Core ➜ DOM rending
 Core -> DOM : updateTables()
 
-'Core ➜ Three.js アニメータ
+'Core ➜ Three.js Animator
 Core -> Ani : renderPSIAnimation()
 Ani  -> Three : redraw()
 
