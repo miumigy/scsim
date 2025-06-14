@@ -127,7 +127,7 @@
     padding-bottom: 16px;
   }
   .td-left {
-    text-align: left;
+    text-align: left !important;
   }
 </style>
 </head>
@@ -425,10 +425,10 @@ const config = {
     fillTarget : 0.95       //  βサービス率 (= Fill-rate)
   },
   flow: {
-    RawPrc:    { cap: 100, leadTime: 5, orderInterval: 5, allowOver: true, fixedCostIfNoOrder: true, lot: 50 },
-    Manufg:    { cap: 100, leadTime: 3, orderInterval: 3, allowOver: true, fixedCostIfNoOrder: true, lot: 50, matPerPrd: 1, prdPerMat: 2 },
-    F2W:       { cap: 100, leadTime: 2, orderInterval: 2, allowOver: true, fixedCostIfNoOrder: true },
-    W2S:       { cap:  50, leadTime: 1, orderInterval: 1, allowOver: false, fixedCostIfNoOrder: true }
+    RawPrc:    { cap: 100, leadTime: 5, orderInterval: 5, allowOver: true,  fixedCostIfNoOrder: true,  lot: 50 },
+    Manufg:    { cap: 100, leadTime: 3, orderInterval: 3, allowOver: true,  fixedCostIfNoOrder: true,  lot: 50, matPerPrd: 1, prdPerMat: 2 },
+    F2W:       { cap: 100, leadTime: 2, orderInterval: 2, allowOver: true,  fixedCostIfNoOrder: true  },
+    W2S:       { cap:  50, leadTime: 1, orderInterval: 1, allowOver: false, fixedCostIfNoOrder: false }
   },
   stock: {
     Raw:       { cap: 100, initial:  50, allowOver: true },
@@ -1467,22 +1467,34 @@ function calcTotalStock(p) {
                 "Stay<br>[R]","Stay<br>[F]","Stay<br>[W]","Stay<br>[S]",
                 "RawMat ID","Activity Based Cost Detail"];
     const rows = soldProducts.map(p=>{
-      const cost = p.total();
-      const detail = `<span class="td-left">${p.costs.map(c=>`[${c.turn}]${c.label}:${pad(c.amount,2)}`).join(", ")}</span>`;
+      const detail = p.costs
+        .map(c=>`[${c.turn}]${c.label}:${pad(c.amount,2)}`)
+        .join(", ");
       return [
-        p.turn,p.id,
+        p.turn,
+        p.id,
         pad(config.sellPrice,2),
-        pad(cost,2), pad(config.sellPrice-cost,2),
+        pad(p.total(),2),
+        pad(config.sellPrice-p.total(),2),
         p.rawDays||0, p.factoryDays||0,
         p.warehouseDays||0,p.storeDays||0,
         (p.materials||[]).join(", "),
         detail
       ];
     });
+
+    const html = rows.map(r=>{
+      return "<tr>"+r.map((c,i)=>
+        `<td${i===10?' class="td-left"':''}>${c}</td>`).join("")+"</tr>";
+    }).join("");
     document.getElementById("products").innerHTML =
-      "<h2>Activity Based Cost Log by Product ID</h2>" + buildTable(head,rows);
+      "<h2>Activity Based Cost Log by Product ID</h2>" +
+      `<div class="scroll-table-wrap"><table>
+         <tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr>${html}
+       </table></div>`;
 
     ScrollKeeper.restore("products");
+
   }
 
   /* ===== 3) PSI =============================================================================== */
