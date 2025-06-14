@@ -171,7 +171,7 @@
 <div id="psi"       class="tab" style="text-align: center;"></div>
 <div id="cashflow"  class="tab" style="text-align: center;"></div>
 <div id="summary"   class="tab" style="text-align: center;"></div>
-<div id="products"  class="tab"</div>
+<div id="products"  class="tab" style="text-align: center;"></div>
 <div id="help" class="tab">
   <div style="max-width:750px;margin:0 auto;padding:24px 8px 32px 16px;text-align:left;line-height:1.75;">
 <div id="help-lang-switch" style="text-align:right; margin-bottom: 10px;">
@@ -425,10 +425,10 @@ const config = {
     fillTarget : 0.95       //  βサービス率 (= Fill-rate)
   },
   flow: {
-    RawPrc:    { cap: 100, leadTime: 5, orderInterval: 5, allowOver: true,  fixedCostIfNoOrder: true,  lot: 50 },
-    Manufg:    { cap: 100, leadTime: 3, orderInterval: 3, allowOver: true,  fixedCostIfNoOrder: true,  lot: 50, matPerPrd: 1, prdPerMat: 2 },
-    F2W:       { cap: 100, leadTime: 2, orderInterval: 2, allowOver: true,  fixedCostIfNoOrder: true  },
-    W2S:       { cap:  50, leadTime: 1, orderInterval: 1, allowOver: false, fixedCostIfNoOrder: false }
+    RawPrc:    { cap: 100, leadTime: 5, orderInterval: 5, allowOver: true, fixedCostIfNoOrder: true, lot: 50 },
+    Manufg:    { cap: 100, leadTime: 3, orderInterval: 3, allowOver: true, fixedCostIfNoOrder: true, lot: 50, matPerPrd: 1, prdPerMat: 2 },
+    F2W:       { cap: 100, leadTime: 2, orderInterval: 2, allowOver: true, fixedCostIfNoOrder: true },
+    W2S:       { cap:  50, leadTime: 1, orderInterval: 1, allowOver: false, fixedCostIfNoOrder: true }
   },
   stock: {
     Raw:       { cap: 100, initial:  50, allowOver: true },
@@ -1480,7 +1480,7 @@ function calcTotalStock(p) {
       ];
     });
     document.getElementById("products").innerHTML =
-      "<h2 style=\"text-align: center;\">Activity Based Cost Log by Product ID</h2>" + buildTable(head,rows);
+      "<h2>Activity Based Cost Log by Product ID</h2>" + buildTable(head,rows);
 
     ScrollKeeper.restore("products");
   }
