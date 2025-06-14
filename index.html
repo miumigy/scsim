@@ -425,14 +425,14 @@ const config = {
     fillTarget : 0.95       //  β Service Level (= Fill-rate)
   },
   flow: {
-    RawPrc:    { cap: 100, leadTime: 5, orderInterval: 5, allowOver: true,  fixedCostIfNoOrder: true,  lot: 50 },
-    Manufg:    { cap: 100, leadTime: 3, orderInterval: 3, allowOver: true,  fixedCostIfNoOrder: true,  lot: 50, matPerPrd: 1, prdPerMat: 2 },
+    RawPrc:    { cap: 150, leadTime: 5, orderInterval: 5, allowOver: true,  fixedCostIfNoOrder: true,  lot: 50 },
+    Manufg:    { cap: 100, leadTime: 3, orderInterval: 3, allowOver: true,  fixedCostIfNoOrder: true,  lot: 50, matPerPrd: 1, prdPerMat: 1 },
     F2W:       { cap: 100, leadTime: 2, orderInterval: 2, allowOver: true,  fixedCostIfNoOrder: true  },
-    W2S:       { cap:  50, leadTime: 1, orderInterval: 1, allowOver: false, fixedCostIfNoOrder: false }
+    W2S:       { cap:  75, leadTime: 1, orderInterval: 1, allowOver: true, fixedCostIfNoOrder: false }
   },
   stock: {
-    Raw:       { cap: 100, initial:  50, allowOver: true },
-    Factory:   { cap: 100, initial:  50, allowOver: true },
+    Raw:       { cap: 150, initial: 100, allowOver: true },
+    Factory:   { cap: 100, initial: 100, allowOver: true },
     Warehouse: { cap: 150, initial: 100, allowOver: true },
     Store:     { cap:  75, initial:  50, allowOver: true }
   },
@@ -814,53 +814,108 @@ class Transport extends FlowBase{
 let sp, flows;
 
 function initInv() {
-  const mp = config.flow.Manufg.matPerPrd || 1;
-  const pp = config.flow.Manufg.prdPerMat || 1;
-  const matCostPerProduct = (mp * config.unitCosts.RawMat) / pp;
+  const mp = config.flow.Manufg.matPerPrd || 1;   // RawMats required per Product
+  const pp = config.flow.Manufg.prdPerMat || 1;   // Products obtained per RawMat
+  const rawCost = config.unitCosts.RawMat;
 
-  // Raw
+  /* ---------- 1) Build Raw-material stock as-is -------------------- */
   for (let i = 0; i < config.stock.Raw.initial; i++) {
     const m = new RawMat();
-    addCost(m, config.unitCosts.RawMat, "RawMat", 0);
+    addCost(m, rawCost, "RawMat", 0);
     sp.Raw.add(m);
   }
 
-  // Factory
-  for (let i = 0; i < config.stock.Factory.initial; i++) {
-    // Generate dummy raw material
-    const m = new RawMat();
-    addCost(m, config.unitCosts.RawMat, "RawMat", 0);
-    const p = new Product();
-    p.materials.push(m.id);
-    addCost(p, matCostPerProduct, "RawMat", 0);
-    addCost(p, config.unitCosts.ManufgEx, "ManufgEx", 0);
-    sp.Factory.add(p);
-  }
+  /* ---------- 2) Common helper ------------------------------------ */
+  /**
+   * @param {number} qty  Number of Product objects to create
+   * @param {Stock}  dst  Destination Stock instance
+   * @param {function(Product)} extraCostFn  Callback to attach extra costs
+   */
+  const addProducts = (qty, dst, extraCostFn) => {
 
-  // Warehouse
-  for (let i = 0; i < config.stock.Warehouse.initial; i++) {
-    const m = new RawMat();
-    addCost(m, config.unitCosts.RawMat, "RawMat", 0);
-    const p = new Product();
-    p.materials.push(m.id);
-    addCost(p, matCostPerProduct, "RawMat", 0);
-    addCost(p, config.unitCosts.ManufgEx, "ManufgEx", 0);
-    addCost(p, config.unitCosts["TransEx:F2W"], "TransEx:F2W",0);
-    sp.Warehouse.add(p);
-  }
+    /* --- A) One RawMat → multiple Products (prdPerMat > 1) -------- */
+    if (pp > 1 && mp === 1) {
+      let sharedRM = null, sharedIdx = 0;
 
-  // Store
-  for (let i = 0; i < config.stock.Store.initial; i++) {
-    const m = new RawMat();
-    addCost(m, config.unitCosts.RawMat, "RawMat", 0);
-    const p = new Product();
-    p.materials.push(m.id);
-    addCost(p, matCostPerProduct, "RawMat", 0);
-    addCost(p, config.unitCosts.ManufgEx, "ManufgEx", 0);
-    addCost(p, config.unitCosts["TransEx:F2W"], "TransEx:F2W", 0);
-    addCost(p, config.unitCosts["TransEx:W2S"], "TransEx:W2S", 0);
-    sp.Store.add(p);
-  }
+      for (let i = 0; i < qty; i++) {
+        if (sharedRM === null || sharedIdx === pp) {
+          sharedRM  = new RawMat();
+          addCost(sharedRM, rawCost, "RawMat", 0);
+          sharedIdx = 0;
+        }
+        const p = new Product();
+        p.materials.push(sharedRM.id);
+
+        /* allocate RawMat cost across pp products */
+        addCost(p, rawCost / pp, "RawMat", 0);
+
+        extraCostFn(p);
+        dst.add(p);
+        sharedIdx++;
+      }
+      return;
+    }
+
+    /* --- B) Multiple RawMats → one Product (matPerPrd > 1) -------- */
+    if (mp > 1 && pp === 1) {
+      for (let i = 0; i < qty; i++) {
+        const p = new Product();
+
+        /* each Product consumes mp individual RawMats */
+        for (let k = 0; k < mp; k++) {
+          const m = new RawMat();
+          addCost(m, rawCost, "RawMat", 0);
+          p.materials.push(m.id);
+
+          /* pass full RawMat cost onto the product */
+          addCost(p, rawCost, "RawMat", 0);
+        }
+        extraCostFn(p);
+        dst.add(p);
+      }
+      return;
+    }
+
+    /* --- C) Fallback (safe): 1 RawMat ↔ 1 Product ----------------- */
+    for (let i = 0; i < qty; i++) {
+      const m = new RawMat();
+      addCost(m, rawCost, "RawMat", 0);
+
+      const p = new Product();
+      p.materials.push(m.id);
+      addCost(p, rawCost, "RawMat", 0);
+      extraCostFn(p);
+      dst.add(p);
+    }
+  };
+
+  /* ---------- 3) Factory ------------------------------------------ */
+  addProducts(
+    config.stock.Factory.initial,
+    sp.Factory,
+    p => addCost(p, config.unitCosts.ManufgEx, "ManufgEx", 0)
+  );
+
+  /* ---------- 4) Warehouse ---------------------------------------- */
+  addProducts(
+    config.stock.Warehouse.initial,
+    sp.Warehouse,
+    p => {
+      addCost(p, config.unitCosts.ManufgEx,       "ManufgEx",    0);
+      addCost(p, config.unitCosts["TransEx:F2W"], "TransEx:F2W", 0);
+    }
+  );
+
+  /* ---------- 5) Store -------------------------------------------- */
+  addProducts(
+    config.stock.Store.initial,
+    sp.Store,
+    p => {
+      addCost(p, config.unitCosts.ManufgEx,       "ManufgEx",    0);
+      addCost(p, config.unitCosts["TransEx:F2W"], "TransEx:F2W", 0);
+      addCost(p, config.unitCosts["TransEx:W2S"], "TransEx:W2S", 0);
+    }
+  );
 }
 
 function buildSimulation() {
