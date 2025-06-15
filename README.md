@@ -3,8 +3,6 @@
 A self-contained, browser-based Supply Chain Simulator for educational and practical use.  
 This tool visualizes end-to-end supply chain flows, cost structures, and PSI (Production, Sales, Inventory) balance, helping users understand trade-offs and optimize decision-making in SCM.
 
-## Demo
-
 https://github.com/user-attachments/assets/870472c3-01d1-4424-9c01-fad0f26a2ecb
 
 ## Features
