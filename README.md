@@ -5,7 +5,7 @@ This tool visualizes end-to-end supply chain flows, cost structures, and PSI (Pr
 
 ## Demo
 
-https://github.com/user-attachments/assets/aa2cfb1a-64f1-45ca-a225-4ad01f44351e
+https://github.com/user-attachments/assets/870472c3-01d1-4424-9c01-fad0f26a2ecb
 
 ## Features
 
