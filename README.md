@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/870472c3-01d1-4424-9c01-fad0f26a2ecb
 
 ## License
 
-MIT License.
+Released under the MIT License. See for details.
 
 ---
 
