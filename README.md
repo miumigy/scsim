@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/870472c3-01d1-4424-9c01-fad0f26a2ecb
 
 ## License
 
-Released under the MIT License. See for details.
+Released under the MIT License. See [LICENSE](https://github.com/miumigy/scsim/blob/main/LICENSE) for details.
 
 ---
 
